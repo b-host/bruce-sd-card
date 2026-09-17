@@ -17,7 +17,7 @@ https://github.com/djsime1/awesome-flipperzero
 
 ### Conteúdo do Projeto
 
-- ![BadUSB and BlueDucky]()
+- ![BadUSB and RuberDucky]()
     - https://github.com/hak5/usbrubberducky-payloads
     - https://github.com/Zero-Sploit/Flipper-Zero-BadUSB/tree/main
     - TODO...https://github.com/7h30th3r0n3/Evil-M5Project/blob/main/SD-Card-File/BadUsbScript

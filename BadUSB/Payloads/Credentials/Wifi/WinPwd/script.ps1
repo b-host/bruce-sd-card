@@ -368,12 +368,23 @@ try {
     exit 1
 }
 
-if ($WebhookUrl -and (-not [string]::IsNullOrWhiteSpace($WebhookUrl))) {
+if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
     try {
         Write-Host "Enviando para webhook: $WebhookUrl"
+        
+        # Garante que a chamada passe os parâmetros corretamente
         $sendResult = send_file_to_webhook -FilePath $out -WebhookUrl $WebhookUrl -ExportDir $ExportDirDefault
-        Write-Host "Envio concluído: $($sendResult.FileSent) em $($sendResult.Time)"
+        
+        # Exibe o resultado checando se o retorno possui as propriedades
+        if ($null -ne $sendResult) {
+            $fileSent = if ($sendResult.PSObject.Properties['FileSent']) { $sendResult.FileSent } else { $out }
+            $timeSent = if ($sendResult.PSObject.Properties['Time']) { $sendResult.Time } else { (Get-Date) }
+            
+            Write-Host "Envio concluído: $fileSent em $timeSent"
+        } else {
+            Write-Host "Envio concluído com sucesso."
+        }
     } catch {
         Write-Error "Erro durante envio para webhook: $_"
     }
-} 
+}

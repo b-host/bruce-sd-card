@@ -862,9 +862,9 @@ function Get-SystemInfo {
         # =====================================================================
         $sectionTimer = Get-Date
         & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
-        & $sec '## 11. ARVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA
-    $sectionTimer = Get-Date
-    & $sectionStart '11. Arvore de arquivos do perfil / Desktop / Lixeira'
+        & $sec '## 11. ARVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA'
+        $sectionTimer = Get-Date
+        & $sectionStart '11. Arvore de arquivos do perfil / Desktop / Lixeira'
 
     $profileRoot = [Environment]::GetFolderPath('UserProfile')
 
@@ -1107,7 +1107,7 @@ function Get-SystemInfo {
 
     & $sectionEnd '11. Arvore de arquivos do perfil / Desktop / Lixeira' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
 
-## 12. NAVEGADORES / HISTORICO / DOWNLOADS / FAVORITOS / EXTENSOES'
+        & $sec '## 12. NAVEGADORES / HISTORICO / DOWNLOADS / FAVORITOS / EXTENSOES'
 
         $browserRoots = @(
             [pscustomobject]@{ Name='Google Chrome'; UserRoot=(Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') },

@@ -1,5 +1,3 @@
-#requires -Version 5.1
-
 
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
 $WebhookUrl = 'https://webhook.site/0e19741a-559b-4878-9931-512f553f8733'

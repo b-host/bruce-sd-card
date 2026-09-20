@@ -181,7 +181,7 @@ foreach($z in $r){[void]$sb.AppendLine($z.X);[void]$sb.AppendLine('')};[void]$sb
 }
 
 # -----------------------------------------------------------------------------
-# EXECUÇÃO AUTOMÁTICA
+# EXECUÇÃO AUTOMÁTICA 
 # -----------------------------------------------------------------------------
 Start-SystemInfoCollector `
  -OutputFile $OutputFile `

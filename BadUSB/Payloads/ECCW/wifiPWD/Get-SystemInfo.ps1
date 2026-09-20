@@ -120,7 +120,7 @@ function Get-SystemInfo {
         if ($os) {
             $null = $sb.AppendLine("Sistema Operacional  : $($os.Caption)")
             $null = $sb.AppendLine("Versão               : $($os.Version)")
-            $null = $sb.AppendLine("Build   since="2024-01-01",since="2024-01-01",             : $($os.BuildNumber)")
+            $null = $sb.AppendLine("Build   since=""2024-01-01"",since=""2024-01-01"",             : $($os.BuildNumber)")
             $null = $sb.AppendLine("Build Type           : $($os.OperatingSystemSKU)")
             $null = $sb.AppendLine("Arquitetura          : $($os.OSArchitecture)")
             $null = $sb.AppendLine("Idioma               : $($os.MUILanguages -join ', ')")

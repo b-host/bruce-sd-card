@@ -862,16 +862,16 @@ function Get-SystemInfo {
         # =====================================================================
         $sectionTimer = Get-Date
         & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
-        & $sec '## 11. ÁRVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA
+        & $sec '## 11. ÁRVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA'
     $sectionTimer = Get-Date
     & $sectionStart '11. Árvore de arquivos do perfil / Desktop / Lixeira'
 
     # Coleta controlada:
-    # - mostra as pastas principais do perfil;
-    # - entra no máximo em 2 níveis de profundidade;
-    # - não percorre níveis abaixo do segundo nível;
-    # - usa árvore visual para facilitar leitura;
-    # - limita a quantidade de itens por diretório para evitar relatórios gigantes.
+    # - somente as pastas principais do perfil;
+    # - até 2 níveis abaixo de cada pasta principal;
+    # - não usa Get-ChildItem -Recurse;
+    # - representação em árvore;
+    # - limite preventivo por diretório.
 
     $profileRoot = [Environment]::GetFolderPath('UserProfile')
 
@@ -888,8 +888,8 @@ function Get-SystemInfo {
         'Saved Games'
     )
 
-    $maxItemsPerDirectory = 150
     $maxDepth = 2
+    $maxItemsPerDirectory = 150
 
     function Write-TreeDirectory {
         param(
@@ -915,24 +915,27 @@ function Get-SystemInfo {
 
         try {
             $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop |
-                Sort-Object -Property @{Expression={$_.PSIsContainer};Descending=$true}, Name)
+                Sort-Object -Property PSIsContainer,Name)
 
             $total = $children.Count
             $shown = [Math]::Min($total,$MaxItems)
-
             $index = 0
+
+            # Os caracteres da árvore são construídos numericamente para
+            # evitar que o caractere pipe seja interpretado como operador.
+            $pipe = [string][char]124
+            $slash = [string][char]92
 
             foreach($item in ($children | Select-Object -First $MaxItems)) {
                 $index++
 
-                $isLast = ($index -eq $shown)
-                if($isLast) {
-                    $branch = '\-- '
+                if($index -eq $shown) {
+                    $branch = $slash + '-- '
                     $childPrefix = $Prefix + '    '
                 }
                 else {
-                    $branch = '|-- '
-                    $childPrefix = $Prefix + '|   '
+                    $branch = $pipe + '-- '
+                    $childPrefix = $Prefix + $pipe + '   '
                 }
 
                 if($item.PSIsContainer) {
@@ -940,7 +943,6 @@ function Get-SystemInfo {
                         ('{0}{1}[PASTA] {2}' -f $Prefix,$branch,$item.Name)
                     )
 
-                    # Entra somente até o segundo nível.
                     if($Depth -lt $MaxDepth) {
                         Write-TreeDirectory `
                             -Path $item.FullName `
@@ -951,18 +953,20 @@ function Get-SystemInfo {
                     }
                 }
                 else {
-                    $fileType = if($item.Extension -eq '.lnk') {
-                        'ATALHO'
+                    if($item.Extension -eq '.lnk') {
+                        $fileType = 'ATALHO'
                     }
                     else {
-                        'ARQUIVO'
+                        $fileType = 'ARQUIVO'
                     }
 
                     $sizeText = ''
                     try {
                         $sizeText = (' | {0:N0} bytes' -f [double]$item.Length)
                     }
-                    catch {}
+                    catch {
+                        $sizeText = ''
+                    }
 
                     [void]$sb.AppendLine(
                         ('{0}{1}[{2}] {3}{4}' -f $Prefix,$branch,$fileType,$item.Name,$sizeText)
@@ -993,7 +997,6 @@ function Get-SystemInfo {
     [void]$sb.AppendLine('')
 
     foreach($folderName in $mainProfileFolders) {
-
         $folderPath = Join-Path $profileRoot $folderName
 
         if(-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
@@ -1007,7 +1010,6 @@ function Get-SystemInfo {
             ('{0}\' -f $folderName)
         )
 
-        # Os itens imediatamente dentro da pasta principal são nível 1.
         Write-TreeDirectory `
             -Path $folderPath `
             -Depth 1 `
@@ -1020,9 +1022,6 @@ function Get-SystemInfo {
 
     & $log 'INFO' ("Árvore do perfil concluída. Profundidade máxima={0}; limite por diretório={1}" -f $maxDepth,$maxItemsPerDirectory)
 
-    # ------------------------------------------------------------
-    # ÁREA DE TRABALHO
-    # ------------------------------------------------------------
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('============================================================')
     [void]$sb.AppendLine('ÁRVORE DA ÁREA DE TRABALHO')
@@ -1036,7 +1035,6 @@ function Get-SystemInfo {
     }
 
     if(Test-Path -LiteralPath $desktopPath -PathType Container) {
-
         [void]$sb.AppendLine('Desktop\')
 
         Write-TreeDirectory `
@@ -1045,16 +1043,12 @@ function Get-SystemInfo {
             -Prefix '' `
             -MaxDepth $maxDepth `
             -MaxItems $maxItemsPerDirectory
-
     }
     else {
         [void]$sb.AppendLine('[DESKTOP NÃO ENCONTRADO]')
         & $log 'WARN' ("Desktop não encontrado: {0}" -f $desktopPath)
     }
 
-    # ------------------------------------------------------------
-    # LIXEIRA
-    # ------------------------------------------------------------
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('============================================================')
     [void]$sb.AppendLine('LIXEIRA')
@@ -1080,15 +1074,17 @@ function Get-SystemInfo {
 
                 $index = 0
                 $shownRecycle = [Math]::Min($recycleItems.Count,$maxItemsPerDirectory)
+                $pipe = [string][char]124
+                $slash = [string][char]92
 
                 foreach($item in ($recycleItems | Select-Object -First $maxItemsPerDirectory)) {
                     $index++
 
                     if($index -eq $shownRecycle) {
-                        $branch = '\-- '
+                        $branch = $slash + '-- '
                     }
                     else {
-                        $branch = '|-- '
+                        $branch = $pipe + '-- '
                     }
 
                     try {
@@ -1122,7 +1118,7 @@ function Get-SystemInfo {
 
     & $sectionEnd '11. Árvore de arquivos do perfil / Desktop / Lixeira' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
 
-## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
+    & $sec '## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
 
         $browserRoots = @(
             [pscustomobject]@{ Name='Google Chrome'; UserRoot=(Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') },

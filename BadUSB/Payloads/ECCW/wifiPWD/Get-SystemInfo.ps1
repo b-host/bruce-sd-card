@@ -22,327 +22,347 @@ function Get-SystemInfo {
     [CmdletBinding()]
     param(
         [string]$OutputFile = $OutputFileDefault,
-        [string]$ExportDir = $ExportDirDefault
+        [string]$ExportDir = $ExportDirDefault,
+        [int]$RecentFiles = 100
     )
 
     $ErrorActionPreference = 'SilentlyContinue'
     $sb = [Text.StringBuilder]::new()
-    $sep = '=' * 70
+    $sep = '=' * 78
     $add = { param($x) [void]$sb.AppendLine([string]$x) }
-    $sec = { param($x) & $add ''; & $add $x; & $add ('-' * 70) }
-    $try = {
-        param([scriptblock]$b)
-        try { & $b } catch { $null }
-    }
+    $sec = { param($x) & $add ''; & $add $x; & $add ('-' * 78) }
+    $try = { param([scriptblock]$b) try { & $b } catch { $null } }
+    $fmt = { param($n,$v) & $add ('{0,-21}: {1}' -f $n,$v) }
 
     & $add $sep
-    & $add 'RELATÓRIO COMPLETO DO SISTEMA'
+    & $add 'INVENTÁRIO TÉCNICO COMPLETO DO SISTEMA'
     & $add "Coletado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
     & $add $sep
 
-    & $sec '## 1. IDENTIFICAÇÃO DO USUÁRIO'
+    & $sec '## 01. IDENTIFICAÇÃO'
     @(
-        "Usuário Logado       : $env:USERNAME"
+        "Usuário              : $env:USERNAME"
         "Domínio              : $env:USERDOMAIN"
         "Domínio DNS          : $env:USERDNSDOMAIN"
-        "Nome Completo (env)  : $env:FULLNAME"
-        "Perfil Path          : $env:USERPROFILE"
+        "Perfil               : $env:USERPROFILE"
         "Computador           : $env:COMPUTERNAME"
+        "Processador PS       : $env:PROCESSOR_IDENTIFIER"
+        "Arquitetura PS       : $env:PROCESSOR_ARCHITECTURE"
     ) | % { & $add $_ }
 
-    $email = '[não disponível]'
-    foreach($q in @(
-        { (gp 'HKCU:\Software\Microsoft\Office\*\Outlook\Profiles\*' -Name 'Account Name').'Account Name' | select -First 1 }
-        { (gp 'HKCU:\Software\Microsoft\Office\*\Outlook\v3\Client.Data').'User Information.Email' }
-        { (gp 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows Messaging Subsystem\Profiles*').'Email' }
-        { (gp 'HKCU:\Software\Microsoft\IdentityCRL').'StoredUserName' }
-        { gci 'HKCU:\Software\Microsoft\IdentityStore\Accounts' | % { gp $_.PSPath } | ? DisplayableId -match '@' | select -First 1 -Expand DisplayableId }
-    )) {
-        $v = & $try $q
-        if($v){ $email = $v; break }
-    }
-    & $add "Email                : $email"
+    $cs = & $try { Get-CimInstance Win32_ComputerSystem }
+    $os = & $try { Get-CimInstance Win32_OperatingSystem }
+    $reg = & $try { Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' }
 
-    & $sec '## 2. SISTEMA OPERACIONAL'
-    $os = & $try { gi Win32_OperatingSystem }
-    if($os){
-        @(
-            "Sistema Operacional  : $($os.Caption)"
-            "Versão               : $($os.Version)"
-            "Build                : $($os.BuildNumber)"
-            "SKU                  : $($os.OperatingSystemSKU)"
-            "Arquitetura          : $($os.OSArchitecture)"
-            "Idioma               : $($os.MUILanguages -join ', ')"
-            "Data Instalação      : $($os.InstallDate)"
-            "Último Boot          : $($os.LastBootUpTime)"
-            "Tempo Ativo (dias)   : $([math]::Round(((Get-Date)-$os.LastBootUpTime).TotalDays,1))"
-            "Tipo de Produto      : $($os.ProductType)"
-            "Registered User      : $($os.RegisteredUser)"
-            "Windows Directory    : $($os.WindowsDirectory)"
-        ) | % { & $add $_ }
-    }
-
-    $cs = & $try { gi Win32_ComputerSystem }
     if($cs){
+        & $fmt 'Fabricante' $cs.Manufacturer
+        & $fmt 'Modelo' $cs.Model
+        $cp = & $try { Get-CimInstance Win32_ComputerSystemProduct }
+        if($cp){ & $fmt 'UUID' $cp.UUID }
+        & $fmt 'Domínio/Workgroup' $(if($cs.PartOfDomain){"Domínio: $($cs.Domain)"}else{"Workgroup: $($cs.Workgroup)"})
+    }
+
+    & $sec '## 02. SISTEMA OPERACIONAL / WINDOWS'
+    if($os){
+        $build = if($reg.CurrentBuild){ "$($reg.CurrentBuild).$($reg.UBR)" }else{$os.BuildNumber}
         @(
-            "Fabricante           : $($cs.Manufacturer)"
-            "Modelo               : $($cs.Model)"
-            "SMBIOS               : $($cs.SMBIOSBIOSVersion)"
-            "Sistema Tipo         : $($cs.SystemType)"
-            "Memória Física       : $([math]::Round($cs.TotalPhysicalMemory/1GB,2)) GB"
+            "Produto              : $($reg.ProductName)"
+            "Display Version       : $($reg.DisplayVersion)"
+            "Release ID            : $($reg.ReleaseId)"
+            "Build                 : $build"
+            "Versão WMI            : $($os.Version)"
+            "Arquitetura           : $($os.OSArchitecture)"
+            "Idioma                : $($os.MUILanguages -join ', ')"
+            "Instalação            : $($os.InstallDate)"
+            "Último Boot           : $($os.LastBootUpTime)"
+            "Uptime (dias)         : $([math]::Round(((Get-Date)-$os.LastBootUpTime).TotalDays,1))"
+            "Windows Directory     : $($os.WindowsDirectory)"
+            "System Directory      : $($os.SystemDirectory)"
+            "Product Type          : $($os.ProductType)"
+            "Usuário registrado    : $($os.RegisteredUser)"
         ) | % { & $add $_ }
     }
 
-    $bios = & $try { gi Win32_BIOS }
+    $lic = & $try { Get-CimInstance SoftwareLicensingProduct | ? { $_.PartialProductKey -and $_.LicenseStatus -eq 1 } | select -First 1 }
+    if($lic){ & $fmt 'Ativação Windows' 'Licenciado/Ativado' }
+
+    & $sec '## 03. HARDWARE'
+    $bios = & $try { Get-CimInstance Win32_BIOS }
     if($bios){
         @(
-            "BIOS/UEFI            : $($bios.Name) v$($bios.SMBIOSBIOSVersion)"
-            "BIOS Fabricante      : $($bios.Manufacturer)"
-            "BIOS Release Date    : $($bios.ReleaseDate)"
+            "BIOS                 : $($bios.Name)"
+            "BIOS Fabricante       : $($bios.Manufacturer)"
+            "BIOS Versão           : $($bios.SMBIOSBIOSVersion)"
+            "BIOS Data             : $($bios.ReleaseDate)"
+            "Serial                : $($bios.SerialNumber)"
         ) | % { & $add $_ }
     }
 
-    & $sec '## 3. HARDWARE'
-    $cpu = & $try { gi Win32_Processor | select -First 1 }
+    $cpu = & $try { Get-CimInstance Win32_Processor | select -First 1 }
     if($cpu){
         @(
             "CPU                  : $($cpu.Name)"
             "Cores                : $($cpu.NumberOfCores)"
             "Threads              : $($cpu.NumberOfLogicalProcessors)"
-            "Clock Base           : $($cpu.MaxClockSpeed) MHz"
+            "Clock Máx.           : $($cpu.MaxClockSpeed) MHz"
             "Clock Atual          : $($cpu.CurrentClockSpeed) MHz"
             "Cache L2             : $([math]::Round($cpu.L2CacheSize/1KB,0)) KB"
             "Cache L3             : $([math]::Round($cpu.L3CacheSize/1KB,0)) KB"
         ) | % { & $add $_ }
     }
 
-    $ram = & $try { gi Win32_PhysicalMemory }
+    $ram = & $try { Get-CimInstance Win32_PhysicalMemory }
     if($ram){
         & $add ''; & $add 'MEMÓRIA RAM:'
-        $ram | % { & $add "  - $([math]::Round($_.Capacity/1GB,1)) GB | $($_.Speed) MHz | $($_.Manufacturer) | $($_.PartNumber)" }
+        $ram | % { & $add "  - $([math]::Round($_.Capacity/1GB,1)) GB | $($_.Speed) MHz | $($_.Manufacturer) | $($_.PartNumber) | Slot: $($_.DeviceLocator)" }
     }
 
-    $disks = & $try { gi Win32_DiskDrive }
+    $disks = & $try { Get-CimInstance Win32_DiskDrive }
     if($disks){
-        & $add ''; & $add 'DISCOS:'
-        $disks | % { & $add "  - $($_.Model) | $([math]::Round($_.Size/1GB,0)) GB | $($_.InterfaceType) | Serial: $($_.SerialNumber)" }
+        & $add ''; & $add 'DISCOS FÍSICOS:'
+        $disks | % { & $add "  - $($_.Model) | $([math]::Round($_.Size/1GB,0)) GB | Interface: $($_.InterfaceType) | Serial: $($_.SerialNumber) | Firmware: $($_.FirmwareRevision)" }
     }
 
-    $parts = & $try { gi Win32_LogicalDisk -Filter 'DriveType=3' }
+    $parts = & $try { Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3' }
     if($parts){
-        & $add ''; & $add 'PARTIÇÕES:'
+        & $add ''; & $add 'VOLUMES:'
         $parts | % {
-            $used = $_.Size - $_.FreeSpace
+            $used=$_.Size-$_.FreeSpace
             & $add "  - $($_.DeviceID) | FS: $($_.FileSystem) | Total: $([math]::Round($_.Size/1GB,2)) GB | Usado: $([math]::Round($used/1GB,2)) GB | Livre: $([math]::Round($_.FreeSpace/$_.Size*100,1))%"
         }
     }
 
-    $gpus = & $try { gi Win32_VideoController }
+    $smart = & $try { Get-PhysicalDisk }
+    if($smart){
+        & $add ''; & $add 'SAÚDE DOS DISCOS:'
+        $smart | % { & $add "  - $($_.FriendlyName) | Tipo: $($_.MediaType) | Health: $($_.HealthStatus) | Operacional: $($_.OperationalStatus) | Tamanho: $([math]::Round($_.Size/1GB,0)) GB" }
+    }
+
+    $gpus = & $try { Get-CimInstance Win32_VideoController }
     if($gpus){
-        & $add ''; & $add 'GPU:'
-        $gpus | % {
-            & $add "  - $($_.Name)"
-            & $add "    Driver: $($_.DriverVersion) | Data: $($_.DriverDate) | VRAM: $([math]::Round($_.AdapterRAM/1GB,1)) GB | Res: $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)"
-        }
+        & $add ''; & $add 'GPU / VÍDEO:'
+        $gpus | % { & $add "  - $($_.Name) | Driver: $($_.DriverVersion) | Data: $($_.DriverDate) | VRAM: $([math]::Round($_.AdapterRAM/1GB,1)) GB | Res: $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)" }
     }
 
-    $mb = & $try { gi Win32_BaseBoard | select -First 1 }
-    if($mb){
-        & $add ''; & $add 'PLACA-MÃE:'
-        @("  Fabricante: $($mb.Manufacturer)","  Modelo: $($mb.Product)","  Serial: $($mb.SerialNumber)") | % { & $add $_ }
+    $mon = & $try { Get-CimInstance Win32_DesktopMonitor }
+    if($mon){
+        & $add ''; & $add 'MONITORES:'
+        $mon | % { & $add "  - $($_.Name) | PNP: $($_.PNPDeviceID)" }
     }
 
-    $usb = & $try { gi Win32_USBControllerDevice | % {
-        [regex]::Match($_.Dependent,'Name="([^"]+)"').Groups[1].Value
-    } | ? { $_ } | select -Unique -First 20 }
-    if($usb){ & $add ''; & $add 'USB:'; $usb | % { & $add "  - $_" } }
+    $devBad = & $try { Get-CimInstance Win32_PnPEntity | ? ConfigManagerErrorCode -and ConfigManagerErrorCode -ne 0 }
+    if($devBad){
+        & $add ''; & $add 'DISPOSITIVOS COM ERRO:'
+        $devBad | % { & $add "  - $($_.Name) | Código: $($_.ConfigManagerErrorCode) | PNP: $($_.PNPDeviceID)" }
+    }
 
-    $bat = & $try { gi Win32_Battery }
+    $bat = & $try { Get-CimInstance Win32_Battery }
     if($bat){
         & $add ''; & $add 'BATERIA:'
         $bat | % { & $add "  - $($_.Name) | Status: $($_.BatteryStatus) | Design: $([math]::Round($_.DesignCapacity/1000,0)) mWh | Atual: $([math]::Round($_.CurrentCapacity/1000,0)) mWh" }
     }
 
-    & $sec '## 4. REDE'
-    $globalIp = '[não disponível]'
+    & $sec '## 04. REDE'
+    $adapters = & $try { Get-NetAdapter }
+    if($adapters){
+        & $add 'ADAPTADORES:'
+        $adapters | % { & $add "  - $($_.Name) | $($_.InterfaceDescription) | Status: $($_.Status) | MAC: $($_.MacAddress) | Link: $($_.LinkSpeed)" }
+    }
+
+    $globalIp='[não disponível]'
     foreach($u in 'https://api.ipify.org','https://ifconfig.me','https://icanhazip.com'){
         if($globalIp -eq '[não disponível]'){
-            $v = & $try { (iwr $u -UseBasicParsing -TimeoutSec 5).Content.Trim() }
-            if($v){ $globalIp = $v }
+            $v=&$try{(Invoke-WebRequest $u -UseBasicParsing -TimeoutSec 5).Content.Trim()}
+            if($v){$globalIp=$v}
         }
     }
-    & $add "IP Global            : $globalIp"
+    & $fmt 'IP Público' $globalIp
 
-    $route = & $try { Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 | sort RouteMetric | select -First 1 }
+    $cfgs = & $try { Get-NetIPConfiguration }
+    if($cfgs){
+        & $add ''; & $add 'CONFIGURAÇÕES IP:'
+        $cfgs | % {
+            $ip=if($_.IPv4Address){$_.IPv4Address.IPAddress -join ', '}else{'-'}
+            $gw=if($_.IPv4DefaultGateway){$_.IPv4DefaultGateway.NextHop -join ', '}else{'-'}
+            $dns=if($_.DnsServer){$_.DnsServer.ServerAddresses -join ', '}else{'-'}
+            & $add "  - $($_.InterfaceAlias) | IPv4: $ip | GW: $gw | DNS: $dns | DHCP: $($_.IPv4DHCPEnabled)"
+        }
+    }
+
+    $prof = & $try { Get-NetConnectionProfile }
+    if($prof){
+        & $add ''; & $add 'PERFIL DE REDE:'
+        $prof | % { & $add "  - $($_.InterfaceAlias) | Rede: $($_.Name) | Categoria: $($_.NetworkCategory) | IPv4: $($_.IPv4Connectivity) | IPv6: $($_.IPv6Connectivity)" }
+    }
+
+    $proxy = & $try { Get-ItemProperty 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' }
+    if($proxy){ & $fmt 'Proxy' $(if($proxy.ProxyEnable){"Ativo - $($proxy.ProxyServer)"}else{'Desativado'}) }
+
+    $route = & $try { Get-NetRoute -AddressFamily IPv4 | ? { $_.NextHop -notin '0.0.0.0','255.255.255.255' } | select -First 30 }
     if($route){
-        $cfg = & $try { Get-NetIPConfiguration -InterfaceIndex $route.InterfaceIndex }
-        if($cfg){ @(
-            "MAC                  : $($cfg.MacAddress)"
-            "Adapter              : $($cfg.InterfaceDescription)"
-            "Alias                : $($cfg.InterfaceAlias)"
-        ) | % { & $add $_ } }
+        & $add ''; & $add 'ROTAS:'
+        $route | % { & $add "  - $($_.DestinationPrefix) | Gateway: $($_.NextHop) | Métrica: $($_.RouteMetric) | Interface: $($_.InterfaceAlias)" }
     }
 
-    $conn = '[não disponível]'
-    $wifi = & $try { Get-NetAdapter | ? InterfaceDescription -match 'Wireless|Wi-Fi|WLAN' }
-    if($wifi){
-        $w = & $try { netsh wlan show interfaces 2>$null | sls '^\s*State\s*:\s*(.+)' }
-        $conn = if($w -match 'connected'){ 'Wi-Fi (Conectado)' } else { 'Wi-Fi' }
-    } elseif(& $try { Get-NetAdapter | ? { $_.InterfaceDescription -match 'Ethernet|LAN|Gigabit' -and $_.Status -eq 'Up' } }){
-        $conn = 'Cabo Ethernet (Conectado)'
-    }
-    & $add "Tipo de Conexão      : $conn"
-
-    $ips = & $try { Get-NetIPAddress -AddressFamily IPv4 | ? { $_.IPAddress -notlike '169.*' -and $_.IPAddress -ne '127.0.0.1' } }
-    if($ips){
-        & $add ''; & $add 'ENDEREÇOS IP:'
-        $ips | % {
-            $c = & $try { Get-NetIPConfiguration -InterfaceIndex $_.InterfaceIndex }
-            & $add "  - $($_.IPAddress) | Adapter: $($c.InterfaceAlias) | Prefix: $($_.PrefixLength) | DHCP: $($c.Dhcpv4Enabled)"
-        }
-    }
-
-    $gws = & $try { Get-NetIPConfiguration | ? IPv4DefaultGateway }
-    if($gws){
-        & $add ''; & $add 'GATEWAYS/DNS:'
-        $gws | % {
-            $dns = if($_.DnsServer){ $_.DnsServer -join ', ' }else{'[nenhum]'}
-            & $add "  - $($_.InterfaceAlias) | Gateway: $($_.IPv4DefaultGateway.NextHop) | DNS: $dns"
-        }
-    }
-
-    $arp = & $try { Get-NetNeighbor | ? State -ne 'Unreachable' | select -First 30 }
+    $arp=&$try{Get-NetNeighbor|? State -ne Unreachable|select -First 50}
     if($arp){
         & $add ''; & $add 'ARP:'
-        $arp | % { & $add "  - $($_.IPAddress) | MAC: $($_.MacAddress) | $($_.State) | $($_.InterfaceAlias)" }
+        $arp|%{&$add "  - $($_.IPAddress) | $($_.MacAddress) | $($_.State) | $($_.InterfaceAlias)"}
     }
 
-    $profiles = & $try { netsh wlan show profiles 2>$null | sls '^\s*All User Profile\s*:\s*(.+)' | % { $_.Matches[0].Groups[1].Value.Trim() } }
+    $wifi = & $try { netsh wlan show interfaces 2>$null }
+    if($wifi){
+        & $add ''; & $add 'WI-FI ATUAL:'
+        $wifi | sls '^\s*(SSID|BSSID|Radio type|Channel|Receive rate|Transmit rate|Signal|State)\s*:' | % { & $add "  - $($_.Line.Trim())" }
+    }
+
+    $profiles=&$try{netsh wlan show profiles 2>$null|sls '^\s*All User Profile\s*:\s*(.+)'|%{$_.Matches[0].Groups[1].Value.Trim()}}
     if($profiles){
-        & $add ''; & $add 'REDES WIFI SALVAS (somente SSID):'
-        $profiles | % { & $add "  - $_" }
+        & $add ''; & $add 'PERFIS WI-FI SALVOS (somente SSID):'
+        $profiles|%{&$add "  - $_"}
     }
 
-    $dhcp = & $try { Get-NetIPConfiguration | ? IPv4DHCPEnabled }
-    if($dhcp){
-        & $add ''; & $add 'DHCP:'
-        $dhcp | % { & $add "  - $($_.InterfaceAlias) | DHCP: Habilitado | DNS Suffix: $($_.DnsSuffix)" }
+    & $sec '## 05. SEGURANÇA'
+    $fw=&$try{Get-NetFirewallProfile}
+    if($fw){&$add "Firewall             : $(($fw|%{"$($_.Name): $(if($_.Enabled){'ON'}else{'OFF'})"}) -join ', ')"}
+
+    $tpm=&$try{Get-Tpm}
+    if($tpm){@("TPM presente         : $($tpm.TpmPresent)","TPM pronto            : $($tpm.TpmReady)","TPM versão            : $($tpm.ManufacturerVersion)")|%{&$add $_}}
+
+    $sbv=&$try{Confirm-SecureBootUEFI}
+    if($sbv -ne $null){&$fmt 'Secure Boot' $(if($sbv){'Ativado'}else{'Desativado'})}
+
+    $bit=&$try{Get-BitLockerVolume}
+    if($bit){&$add 'BITLOCKER:';$bit|%{&$add "  - $($_.MountPoint) | Status: $($_.VolumeStatus) | Proteção: $($_.ProtectionStatus) | Método: $($_.EncryptionMethod)"}}
+
+    $av=&$try{Get-CimInstance -Namespace root\SecurityCenter2 -ClassName AntivirusProduct}
+    if($av){&$add ''; & $add 'ANTIVÍRUS:';$av|%{&$add "  - $($_.DisplayName) | Status: $($_.productState)"}}
+
+    $def=&$try{Get-MpComputerStatus}
+    if($def){@("Defender             : Ativo=$($def.AntivirusEnabled) | RT=$($def.RealTimeProtectionEnabled)","Assinatura Defender   : $($def.AntivirusSignatureLastUpdated)")|%{&$add $_}}
+
+    $uac=&$try{Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System'}
+    if($uac){&$fmt 'UAC' $(if($uac.EnableLUA){'Ativado'}else{'Desativado'})}
+
+    & $sec '## 06. WINDOWS UPDATE / PATCHES'
+    $hot=&$try{Get-HotFix|sort InstalledOn -Desc}
+    if($hot){$hot|select -First 20|%{&$add "  - $($_.HotFixID) | $($_.InstalledOn) | $($_.Description)"}}
+
+    $wu=&$try{
+        $s=New-Object -ComObject Microsoft.Update.Session
+        $q=$s.CreateUpdateSearcher()
+        [pscustomobject]@{Last=$q.LastSearchSuccessDate;Pending=$q.Search('IsInstalled=0').Updates}
+    }
+    if($wu){@("Última busca         : $($wu.Last)","Pendentes             : $($wu.Pending.Count)")|%{&$add $_};$wu.Pending|select -First 10|%{&$add "  - $($_.Title)"}}
+
+    & $sec '## 07. SOFTWARE / DRIVERS'
+    $apps=&$try{Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'|? DisplayName|select DisplayName,DisplayVersion,Publisher,InstallDate|sort DisplayName}
+    if($apps){$apps|select -First 100|%{&$add "  - $($_.DisplayName) v$($_.DisplayVersion) | $($_.Publisher) | $($_.InstallDate)"}}
+
+    $drivers=&$try{Get-CimInstance Win32_PnPSignedDriver|? DeviceName|select DeviceName,DriverVersion,DriverDate,Manufacturer|sort DeviceName}
+    if($drivers){&$add ''; & $add 'DRIVERS:';$drivers|select -First 100|%{&$add "  - $($_.DeviceName) | $($_.DriverVersion) | $($_.DriverDate) | $($_.Manufacturer)"}}
+
+    & $sec '## 08. SERVIÇOS / INICIALIZAÇÃO'
+    $svc=&$try{Get-Service|? Status -eq Running}
+    if($svc){$svc|sort Name|select -First 100|%{&$add "  - $($_.Name) | $($_.DisplayName) | $($_.StartType)"}}
+
+    $run=@(
+        'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run'
+        'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'
+        'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    )
+    & $add 'INICIALIZAÇÃO (Run):'
+    foreach($p in $run){
+        $x=&$try{Get-ItemProperty $p}
+        if($x){$x.PSObject.Properties|? Name -notmatch '^PS'|%{&$add "  - $($_.Name): $($_.Value)"}}
     }
 
-    & $sec '## 5. SEGURANÇA'
-    $fw = & $try { Get-NetFirewallProfile }
-    if($fw){
-        $f = $fw | % { "$($_.Name): $(if($_.Enabled){'ATIVADO'}else{'DESATIVADO'})" }
-        & $add "Windows Firewall     : $($f -join ', ')"
+    $startup=@("$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup","$env:ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp")
+    & $add 'PASTAS STARTUP:'
+    foreach($p in $startup){&$try{Get-ChildItem $p -File|%{&$add "  - $($_.FullName)"}}}
+
+    $tasks=&$try{Get-ScheduledTask|? {$_.State -ne 'Disabled' -and $_.TaskPath -notlike '\Microsoft\*'}|select TaskName,TaskPath,State}
+    if($tasks){&$add ''; & $add 'TAREFAS AGENDADAS (TERCEIROS):';$tasks|select -First 100|%{&$add "  - $($_.TaskPath)$($_.TaskName) | $($_.State)"}}
+
+    & $sec '## 09. USUÁRIOS / COMPARTILHAMENTOS'
+    $users=&$try{Get-LocalUser}
+    if($users){$users|%{&$add "  - $($_.Name) | Ativo: $($_.Enabled) | Último Login: $($_.LastLogon) | Senha: $($_.PasswordLastSet)"}}
+
+    $admins=&$try{Get-LocalGroupMember Administrators}
+    if($admins){&$add ''; & $add 'ADMINISTRADORES:';$admins|%{&$add "  - $($_.Name) | $($_.ObjectType)"}}
+
+    $shares=&$try{Get-SmbShare}
+    if($shares){&$add ''; & $add 'COMPARTILHAMENTOS SMB:';$shares|%{&$add "  - $($_.Name) | $($_.Path) | $($_.ShareType)"}}
+
+    $mapped=&$try{Get-PSDrive -PSProvider FileSystem|? DisplayRoot}
+    if($mapped){&$add ''; & $add 'DRIVES MAPEADOS:';$mapped|%{&$add "  - $($_.Name): -> $($_.DisplayRoot)"}}
+
+    & $sec '## 10. PROCESSOS / DIAGNÓSTICO'
+    $proc=&$try{Get-Process|sort WorkingSet64 -Desc|select -First 30}
+    if($proc){$proc|%{&$add "  - $($_.ProcessName) | PID: $($_.Id) | Mem: $([math]::Round($_.WorkingSet64/1MB,1)) MB | CPU: $([math]::Round($_.CPU,1))s"}}
+
+    $listen=&$try{netstat -ano 2>$null|sls LISTENING|select -First 50}
+    if($listen){&$add ''; & $add 'PORTAS EM ESCUTA:';$listen|%{&$add "  - $($_.Line.Trim())"}}
+
+    $est=&$try{netstat -ano 2>$null|sls ESTABLISHED|select -First 50}
+    if($est){&$add ''; & $add 'CONEXÕES ESTABELECIDAS:';$est|%{&$add "  - $($_.Line.Trim())"}}
+
+    $events=&$try{Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50}
+    if($events){
+        & $add ''; & $add 'ERROS/CRÍTICOS DO SYSTEM (7 DIAS):'
+        $events|%{&$add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"}
     }
 
-    $av = & $try { Get-CimInstance -Namespace root\SecurityCenter2 -ClassName AntivirusProduct }
-    if($av){
-        & $add ''; & $add 'ANTIVÍRUS:'
-        $av | % { & $add "  - $($_.DisplayName) | Status: $($_.productState)" }
+    $appEvents=&$try{Get-WinEvent -FilterHashtable @{LogName='Application';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50}
+    if($appEvents){
+        & $add ''; & $add 'ERROS/CRÍTICOS DE APLICATIVOS (7 DIAS):'
+        $appEvents|%{&$add "  - $($_.TimeCreated) | ID $($_.Id) | $($_.ProviderName) | $(if($_.Message){$m=$_.Message -replace '\s+',' ';$m.Substring(0,[math]::Min(180,$m.Length))})"}
     }
 
-    $upd = & $try {
-        $s = New-Object -ComObject Microsoft.Update.Session
-        $q = $s.CreateUpdateSearcher()
-        [pscustomobject]@{ Last=$q.LastSearchSuccessDate; Pending=$q.Search('IsInstalled=0').Updates }
-    }
-    if($upd){
-        & $add ''; & $add 'WINDOWS UPDATE:'
-        & $add "  Última busca: $($upd.Last)"
-        & $add "  Pendentes: $($upd.Pending.Count)"
-        $upd.Pending | select -First 10 | % { & $add "    - $($_.Title)" }
+    $dumps=&$try{Get-ChildItem "$env:SystemRoot\Minidump\*.dmp" -File}
+    if($dumps){&$add ''; & $add 'MINIDUMPS:';$dumps|sort LastWriteTime -Desc|select -First 20|%{&$add "  - $($_.FullName) | $($_.LastWriteTime) | $([math]::Round($_.Length/1MB,1)) MB"}}
+
+    & $sec '## 11. ARQUIVOS RECENTES'
+    & $add "Limite: $RecentFiles por categoria"
+
+    $recentRoot=Join-Path $env:APPDATA 'Microsoft\Windows\Recent'
+    $recent=&$try{Get-ChildItem $recentRoot -File|sort LastWriteTime -Desc|select -First $RecentFiles}
+    if($recent){
+        & $add 'ITENS DA PASTA RECENTES DO WINDOWS:'
+        $recent|%{&$add "  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)"}
     }
 
-    $users = & $try { Get-LocalUser }
-    if($users){
-        & $add ''; & $add 'USUÁRIOS LOCAIS:'
-        $users | % { & $add "  - $($_.Name) | Ativo: $($_.Enabled) | Último Login: $($_.LastLogon) | Senha alterada: $($_.PasswordLastSet)" }
+    # Pesquisa limitada a diretórios de uso comum, evitando varredura indiscriminada do perfil.
+    $scan=@("$env:USERPROFILE\Desktop","$env:USERPROFILE\Documents","$env:USERPROFILE\Downloads")
+    $files=&$try{
+        Get-ChildItem $scan -File -Force -ErrorAction SilentlyContinue |
+        ? FullName -notmatch '\\AppData\\' |
+        sort LastWriteTime -Desc | select -First $RecentFiles
+    }
+    if($files){
+        & $add ''; & $add 'ARQUIVOS RECENTEMENTE MODIFICADOS:'
+        $files|%{&$add "  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.FullName)"}
     }
 
-    $admins = & $try { Get-LocalGroupMember -Group Administrators }
-    if($admins){
-        & $add ''; & $add 'ADMINISTRADORES:'
-        $admins | % { & $add "  - $($_.Name) ($($_.ObjectType))" }
-    }
-
-    $shares = & $try { Get-SmbShare }
-    if($shares){
-        & $add ''; & $add 'COMPARTILHAMENTOS SMB:'
-        $shares | % { & $add "  - $($_.Name) | $($_.Path) | $($_.ShareType)" }
-    }
-
-    $mapped = & $try { Get-PSDrive -PSProvider FileSystem | ? DisplayRoot }
-    if($mapped){
-        & $add ''; & $add 'DRIVES MAPEADOS:'
-        $mapped | % { & $add "  - $($_.Name): -> $($_.DisplayRoot)" }
-    }
-
-    $services = & $try { Get-Service | ? { $_.Status -eq 'Running' -and $_.StartType -eq 'Automatic' } }
-    if($services){
-        & $add ''; & $add 'SERVIÇOS AUTOMÁTICOS EM EXECUÇÃO:'
-        $services | select -First 30 | % { & $add "  - $($_.Name) | $($_.DisplayName)" }
-    }
-
-    $proc = & $try { Get-Process | sort WorkingSet64 -Desc | select -First 20 }
-    if($proc){
-        & $add ''; & $add 'TOP 20 PROCESSOS POR MEMÓRIA:'
-        $proc | % { & $add "  - $($_.ProcessName) | PID: $($_.Id) | Mem: $([math]::Round($_.WorkingSet64/1MB,1)) MB" }
-    }
-
-    $apps = & $try {
-        gp 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*' |
-        ? DisplayName | select DisplayName,DisplayVersion,Publisher | sort DisplayName
-    }
-    if($apps){
-        & $add ''; & $add 'PROGRAMAS INSTALADOS:'
-        $apps | select -First 50 | % { & $add "  - $($_.DisplayName) v$($_.DisplayVersion) | $($_.Publisher)" }
-    }
-
-    $tasks = & $try { Get-ScheduledTask | ? { $_.State -eq 'Ready' -and $_.TaskPath -notlike '\Microsoft\*' } | select -First 20 }
-    if($tasks){
-        & $add ''; & $add 'TAREFAS AGENDADAS (TERCEIROS):'
-        $tasks | % { & $add "  - $($_.TaskPath)$($_.TaskName) | $($_.State)" }
-    }
-
-    $routes = & $try { Get-NetRoute -AddressFamily IPv4 | ? { $_.NextHop -notin '0.0.0.0','255.255.255.255' } | select -First 20 }
-    if($routes){
-        & $add ''; & $add 'ROTAS:'
-        $routes | % { & $add "  - $($_.DestinationPrefix) | Gateway: $($_.NextHop) | Métrica: $($_.RouteMetric)" }
-    }
-
-    $listen = & $try { netstat -ano 2>$null | sls LISTENING | select -First 30 }
-    if($listen){
-        & $add ''; & $add 'PORTAS EM ESCUTA:'
-        $listen | % { & $add "  - $($_.Line.Trim())" }
-    }
-
-    $est = & $try { netstat -ano 2>$null | sls ESTABLISHED | select -First 30 }
-    if($est){
-        & $add ''; & $add 'CONEXÕES ESTABELECIDAS:'
-        $est | % { & $add "  - $($_.Line.Trim())" }
-    }
-
-    & $sec '## 6. VARIÁVEIS DE AMBIENTE'
-    foreach($n in 'PATH','APPDATA','PROGRAMDATA','SYSTEMDRIVE','SYSTEMROOT','TEMP','TMP','USERDOMAIN','USERNAME','COMPUTERNAME'){
-        $v = [Environment]::GetEnvironmentVariable($n)
+    & $sec '## 12. AMBIENTE'
+    foreach($n in 'PATH','APPDATA','PROGRAMDATA','SYSTEMDRIVE','SYSTEMROOT','TEMP','TMP','USERNAME','COMPUTERNAME'){
+        $v=[Environment]::GetEnvironmentVariable($n)
         if($v){
-            $v = if($v.Length -gt 40){$v.Substring(0,20)+'...'+$v.Substring($v.Length-15)}else{$v}
-            & $add "  $n = $v"
+            $v=if($v.Length -gt 80){$v.Substring(0,40)+'...'+$v.Substring($v.Length-30)}else{$v}
+            &$add "  $n = $v"
         }
     }
 
     & $add ''; & $add $sep; & $add 'FIM DO RELATÓRIO'; & $add $sep
 
     try{
-        if(!(Test-Path $ExportDir -PathType Container)){ New-Item $ExportDir -ItemType Directory -Force | Out-Null }
-        $sb.ToString() | Out-File $OutputFile -Encoding UTF8 -Force
+        if(!(Test-Path $ExportDir -PathType Container)){New-Item $ExportDir -ItemType Directory -Force|Out-Null}
+        $sb.ToString()|Out-File $OutputFile -Encoding UTF8 -Force
         Write-Host "Relatório salvo em: $OutputFile"
-        $OutputFile
-    }catch{
-        Write-Error "Falha ao salvar relatório em $OutputFile`: $_"
-    }
+        return $OutputFile
+    }catch{Write-Error "Falha ao salvar relatório em $OutputFile`: $_"}
 }
+
 
 ##############################################################################
 

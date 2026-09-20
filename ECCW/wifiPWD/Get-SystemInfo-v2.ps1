@@ -2,7 +2,7 @@
 
 
 # Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://webhook.site/0e19741a-559b-4878-9931-512f553f8733'
+$WebhookUrl = 'https://n8n.caju.dpdns.org/webhook/bot'
 
 # Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'

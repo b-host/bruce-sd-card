@@ -1519,9 +1519,16 @@ LIMIT $BrowserEntries;
         return $fullOutput
     }
     catch {
-        & $log 'ERROR' "Falha fatal na geração/gravação do relatório: $($_.Exception.Message)"
-        Write-Error "Falha ao gerar/salvar relatório em '$OutputFile': $($_.Exception.Message)"
-        return $null
+        $errorMessage = $_.Exception.Message
+        try {
+            & $log 'ERROR' ("Falha fatal na geração/gravação do relatório: {0}" -f $errorMessage)
+        } catch {}
+
+        Write-Error ("Falha ao gerar/salvar relatório em '{0}': {1}" -f $OutputFile,$errorMessage)
+
+        # Importante: não retorna um caminho inexistente. O chamador receberá
+        # uma exceção e poderá interromper o envio do arquivo.
+        throw
     }
     finally {
         $ErrorActionPreference = $oldErrorActionPreference
@@ -1585,12 +1592,46 @@ function Invoke-DataDump {
             }
         }
 
-        Write-Host "Arquivo gerado em: $out"
-        return $out
+        $resolvedOutput = $null
+
+        if($out -is [System.Array]) {
+            $candidate = $out | Where-Object {
+                $_ -is [string] -and -not [string]::IsNullOrWhiteSpace([string]$_)
+            } | Select-Object -Last 1
+        }
+        else {
+            $candidate = $out
+        }
+
+        if($candidate) {
+            try {
+                $resolvedOutput = (Resolve-Path -LiteralPath ([string]$candidate) -ErrorAction Stop).Path
+            }
+            catch {
+                $resolvedOutput = $null
+            }
+        }
+
+        if(-not $resolvedOutput) {
+            try {
+                $resolvedOutput = (Resolve-Path -LiteralPath $OutputFile -ErrorAction Stop).Path
+            }
+            catch {
+                throw "A coleta terminou, mas o arquivo de saída não existe: $OutputFile"
+            }
+        }
+
+        if(-not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
+            throw "A coleta terminou sem gerar um arquivo válido: $resolvedOutput"
+        }
+
+        Write-Host "Arquivo gerado em: $resolvedOutput"
+        return $resolvedOutput
     } catch {
         throw "Erro ao gerar arquivo: $($_.Exception.Message)"
     }
 }
+
 
 
 ##############################################################################

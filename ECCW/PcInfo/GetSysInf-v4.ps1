@@ -88,7 +88,7 @@ function Get-SystemInfo {
 
     $sectionEnd = {
         param([string]$Name,[int]$ElapsedSeconds)
-        & $log 'INFO' "Concluído: $Name (${ElapsedSeconds}s)"
+        & $log 'INFO' ("Concluído: {0} ({1}s)" -f $Name,$ElapsedSeconds)
     }
 
     $cleanText = {
@@ -924,7 +924,7 @@ function Get-SystemInfo {
             [void]$sb.AppendLine(('Itens exibidos: {0}' -f $shown))
 
             if($total -eq 0) {
-                [void]$sb.AppendLine('  (vazia)')
+                [void]$sb.AppendLine("  [VAZIA]")
                 continue
             }
 
@@ -1003,7 +1003,7 @@ function Get-SystemInfo {
                 Sort-Object -Property PSIsContainer, Name)
 
             if($desktopItems.Count -eq 0) {
-                [void]$sb.AppendLine('  (área de trabalho vazia)')
+                [void]$sb.AppendLine("  [DESKTOP VAZIO]")
             }
             else {
                 foreach($item in ($desktopItems | Select-Object -First $maxItemsPerFolder)) {
@@ -1066,7 +1066,7 @@ function Get-SystemInfo {
             $recycleItems = @($recycleBin.Items())
 
             if($recycleItems.Count -eq 0) {
-                [void]$sb.AppendLine('  (Lixeira vazia)')
+                [void]$sb.AppendLine("  [LIXEIRA VAZIA]")
             }
             else {
                 foreach($item in ($recycleItems | Select-Object -First $maxItemsPerFolder)) {
@@ -1487,7 +1487,7 @@ LIMIT $BrowserEntries;
         & $add 'FIM DO RELATÓRIO'
         & $add $sep
 
-        & $log 'INFO' 'Coleta de dados concluída. Preparando gravação do relatório.'
+        & $log 'INFO' 'Coleta de dados concluida. Preparando gravacao do relatorio.'
 
         if(-not $ExportDir) {
             $ExportDir = Split-Path $OutputFile -Parent
@@ -1631,7 +1631,6 @@ function Invoke-DataDump {
         throw "Erro ao gerar arquivo: $($_.Exception.Message)"
     }
 }
-
 
 
 ##############################################################################

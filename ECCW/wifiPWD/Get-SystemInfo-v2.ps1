@@ -1021,7 +1021,7 @@ function Clear-All {
 
 #### Executa ####
 $out = Invoke-DataDump `
-    -DumpCommand { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } `
+    -DumpCommand { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir$ExportDirDefault } `
     -OutputFile $OutputFileDefault `
     -ExportDir $ExportDirDefault
 

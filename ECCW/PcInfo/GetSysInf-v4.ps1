@@ -28,14 +28,14 @@ function Get-SystemInfo {
     $OutputFile = [string]$OutputFile
 
     if([string]::IsNullOrWhiteSpace($OutputFile)) {
-        throw 'OutputFile não pode ser vazio.'
+        throw 'OutputFile nao pode ser vazio.'
     }
 
     if([string]::IsNullOrWhiteSpace($ExportDir)) {
-        throw 'ExportDir não pode ser vazio.'
+        throw 'ExportDir nao pode ser vazio.'
     }
 
-    # Não usa SilentlyContinue globalmente: falhas individuais são tratadas pelo helper $try.
+    # Nao usa SilentlyContinue globalmente: falhas individuais sao tratadas pelo helper $try.
     $oldErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
 
@@ -55,10 +55,10 @@ function Get-SystemInfo {
     }
 
     # -------------------------------------------------------------------------
-    # LOG DE EXECUÇÃO
+    # LOG DE EXECUCAO
     # -------------------------------------------------------------------------
-    # O log é gravado em arquivo separado e também exibido no console.
-    # Falhas no próprio logger nunca interrompem a coleta.
+    # O log e gravado em arquivo separado e tambem exibido no console.
+    # Falhas no proprio logger nunca interrompem a coleta.
     if(-not (Test-Path $ExportDir -PathType Container)) {
         try {
             New-Item -Path $ExportDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
@@ -88,7 +88,7 @@ function Get-SystemInfo {
 
     $sectionEnd = {
         param([string]$Name,[int]$ElapsedSeconds)
-        & $log 'INFO' ("Concluído: {0} ({1}s)" -f $Name,$ElapsedSeconds)
+        & $log 'INFO' ("Concluido: {0} ({1}s)" -f $Name,$ElapsedSeconds)
     }
 
     $cleanText = {
@@ -107,16 +107,16 @@ function Get-SystemInfo {
         return $s
     }
 
-    & $log 'INFO' "Início da coleta. PowerShell=$($PSVersionTable.PSVersion). Host=$env:COMPUTERNAME"
+    & $log 'INFO' "Inicio da coleta. PowerShell=$($PSVersionTable.PSVersion). Host=$env:COMPUTERNAME"
 
     if($PSVersionTable.PSVersion.Major -lt 3) {
-        & $log 'WARN' 'PowerShell anterior à versão 3 detectado. Algumas APIs modernas poderão não estar disponíveis; a coleta tentará continuar.'
+        & $log 'WARN' 'PowerShell anterior a versao 3 detectado. Algumas APIs modernas poderao nao estar disponiveis; a coleta tentara continuar.'
     }
-    & $log 'INFO' "Relatório: $OutputFile"
+    & $log 'INFO' "Relatorio: $OutputFile"
     & $log 'INFO' "Log: $logFile"
 
     # -------------------------------------------------------------------------
-    # Helper para compatibilidade com versões antigas do PowerShell.
+    # Helper para compatibilidade com versoes antigas do PowerShell.
     # Evita depender de -File e -Directory do Get-ChildItem.
     # -------------------------------------------------------------------------
     $getFiles = {
@@ -141,13 +141,13 @@ function Get-SystemInfo {
     # -------------------------------------------------------------------------
     # SQLite PARA NAVEGADORES
     # -------------------------------------------------------------------------
-    # Estratégia:
+    # Estrategia:
     #   1. System.Data.SQLite
     #   2. Microsoft.Data.Sqlite
     #   3. sqlite3.exe, se instalado
     #
-    # O banco original nunca é alterado. É copiado para %TEMP% antes da leitura.
-    # A saída SQL é convertida em objetos PowerShell e depois em texto legível.
+    # O banco original nunca e alterado. E copiado para %TEMP% antes da leitura.
+    # A saida SQL e convertida em objetos PowerShell e depois em texto legivel.
     # -------------------------------------------------------------------------
     $sqliteProvider = $null
     $sqliteType = $null
@@ -157,7 +157,7 @@ function Get-SystemInfo {
         Add-Type -AssemblyName System.Data.SQLite -ErrorAction Stop
         $sqliteType = [System.Data.SQLite.SQLiteConnection]
         $sqliteProvider = 'System.Data.SQLite'
-        & $log 'INFO' 'SQLite: System.Data.SQLite disponível.'
+        & $log 'INFO' 'SQLite: System.Data.SQLite disponivel.'
     } catch {}
 
     if(-not $sqliteType) {
@@ -165,7 +165,7 @@ function Get-SystemInfo {
             Add-Type -AssemblyName Microsoft.Data.Sqlite -ErrorAction Stop
             $sqliteType = [Microsoft.Data.Sqlite.SqliteConnection]
             $sqliteProvider = 'Microsoft.Data.Sqlite'
-            & $log 'INFO' 'SQLite: Microsoft.Data.Sqlite disponível.'
+            & $log 'INFO' 'SQLite: Microsoft.Data.Sqlite disponivel.'
         } catch {}
     }
 
@@ -176,12 +176,12 @@ function Get-SystemInfo {
             if([string]::IsNullOrWhiteSpace($sqliteExe)) {
                 $sqliteExe = $sqliteCommand.Definition
             }
-            & $log 'INFO' "SQLite CLI disponível: $sqliteExe"
+            & $log 'INFO' "SQLite CLI disponivel: $sqliteExe"
         }
     } catch {}
 
     if(-not $sqliteProvider -and -not $sqliteExe) {
-        & $log 'WARN' 'Nenhum mecanismo SQLite encontrado. Histórico SQL dos navegadores não poderá ser convertido.'
+        & $log 'WARN' 'Nenhum mecanismo SQLite encontrado. Historico SQL dos navegadores nao podera ser convertido.'
     }
 
     $invokeBrowserSQLite = {
@@ -192,7 +192,7 @@ function Get-SystemInfo {
         )
 
         if([string]::IsNullOrWhiteSpace($Database) -or -not (Test-Path $Database -PathType Leaf)) {
-            & $log 'WARN' ("{0}: banco não encontrado: {1}" -f $Context,$Database)
+            & $log 'WARN' ("{0}: banco nao encontrado: {1}" -f $Context,$Database)
             return $null
         }
 
@@ -214,7 +214,7 @@ function Get-SystemInfo {
         }
 
         try {
-            & $log 'INFO' ("{0}: copiando banco e arquivos WAL/SHM para área temporária." -f $Context)
+            & $log 'INFO' ("{0}: copiando banco e arquivos WAL/SHM para area temporaria." -f $Context)
 
             New-Item -Path $tmpDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
 
@@ -235,11 +235,11 @@ function Get-SystemInfo {
             }
 
             if(-not $copySucceeded) {
-                throw "Não foi possível copiar o banco SQLite após 3 tentativas: $copyLastError"
+                throw "Nao foi possivel copiar o banco SQLite apos 3 tentativas: $copyLastError"
             }
 
             # Em bancos SQLite no modo WAL, registros recentes podem estar nos
-            # arquivos -wal e -shm. Mantemos os sidecars junto da cópia.
+            # arquivos -wal e -shm. Mantemos os sidecars junto da copia.
             foreach($sidecar in @('-wal','-shm')) {
                 $sourceSidecar = $Database + $sidecar
                 $destSidecar = $tmp + $sidecar
@@ -249,7 +249,7 @@ function Get-SystemInfo {
                         Copy-Item -Path $sourceSidecar -Destination $destSidecar -Force -ErrorAction Stop
                     }
                     catch {
-                        & $log 'WARN' ("{0}: não foi possível copiar {1}." -f $Context,$sidecar)
+                        & $log 'WARN' ("{0}: nao foi possivel copiar {1}." -f $Context,$sidecar)
                     }
                 }
             }
@@ -264,7 +264,7 @@ function Get-SystemInfo {
                 $table = New-Object System.Data.DataTable
                 $table.Load($rd)
 
-                & $log 'INFO' ("{0}: consulta concluída via System.Data.SQLite. Registros={1}" -f $Context,$table.Rows.Count)
+                & $log 'INFO' ("{0}: consulta concluida via System.Data.SQLite. Registros={1}" -f $Context,$table.Rows.Count)
                 & $cleanupSqliteTemp
                 return $table
             }
@@ -294,7 +294,7 @@ function Get-SystemInfo {
                     [void]$rows.Add([pscustomobject]$obj)
                 }
 
-                & $log 'INFO' ("{0}: consulta concluída via Microsoft.Data.Sqlite. Registros={1}" -f $Context,$rows.Count)
+                & $log 'INFO' ("{0}: consulta concluida via Microsoft.Data.Sqlite. Registros={1}" -f $Context,$rows.Count)
                 & $cleanupSqliteTemp
                 return @($rows)
             }
@@ -330,10 +330,10 @@ function Get-SystemInfo {
                 $process.StartInfo = $psi
 
                 if(-not $process.Start()) {
-                    throw 'Não foi possível iniciar sqlite3.exe.'
+                    throw 'Nao foi possivel iniciar sqlite3.exe.'
                 }
 
-                # CSV com cabeçalho facilita a conversão SQL -> objetos PowerShell.
+                # CSV com cabecalho facilita a conversao SQL -> objetos PowerShell.
                 $sqlInput = ".headers on`r`n.mode csv`r`n$Query`r`n.quit`r`n"
                 $process.StandardInput.Write($sqlInput)
                 $process.StandardInput.Close()
@@ -343,18 +343,18 @@ function Get-SystemInfo {
                 $process.WaitForExit()
 
                 if($process.ExitCode -ne 0) {
-                    throw "sqlite3.exe retornou código $($process.ExitCode): $stderr"
+                    throw "sqlite3.exe retornou codigo $($process.ExitCode): $stderr"
                 }
 
                 if([string]::IsNullOrWhiteSpace($stdout)) {
-                    & $log 'INFO' ("{0}: consulta sqlite3.exe não retornou registros." -f $Context)
+                    & $log 'INFO' ("{0}: consulta sqlite3.exe nao retornou registros." -f $Context)
                     & $cleanupSqliteTemp
                     return $null
                 }
 
                 $rows = @($stdout | ConvertFrom-Csv)
 
-                & $log 'INFO' ("{0}: consulta concluída via sqlite3.exe. Registros={1}" -f $Context,$rows.Count)
+                & $log 'INFO' ("{0}: consulta concluida via sqlite3.exe. Registros={1}" -f $Context,$rows.Count)
                 & $cleanupSqliteTemp
                 return $rows
             }
@@ -422,27 +422,27 @@ function Get-SystemInfo {
 
     try {
         & $add $sep
-        & $add 'INVENTÁRIO TÉCNICO COMPLETO DO SISTEMA'
+        & $add 'INVENTARIO TECNICO COMPLETO DO SISTEMA'
         & $add "Coletado em: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')"
         & $add $sep
 
         # =====================================================================
-        # 01. IDENTIFICAÇÃO
+        # 01. IDENTIFICACAO
         # =====================================================================
         $sectionTimer = Get-Date
-        & $sectionStart '01. Identificação'
-        & $sec '## 01. IDENTIFICAÇÃO'
+        & $sectionStart '01. Identificacao'
+        & $sec '## 01. IDENTIFICACAO'
         @(
-            "Usuário              : $env:USERNAME"
-            "Domínio              : $env:USERDOMAIN"
-            "Domínio DNS          : $env:USERDNSDOMAIN"
+            "Usuario              : $env:USERNAME"
+            "Dominio              : $env:USERDOMAIN"
+            "Dominio DNS          : $env:USERDNSDOMAIN"
             "Perfil               : $env:USERPROFILE"
             "Computador           : $env:COMPUTERNAME"
             "Processador PS       : $env:PROCESSOR_IDENTIFIER"
             "Arquitetura PS       : $env:PROCESSOR_ARCHITECTURE"
         ) | ForEach-Object { & $add $_ }
 
-        & $log 'INFO' 'Consultando identificação do computador.'
+        & $log 'INFO' 'Consultando identificacao do computador.'
         $cs = & $try { Get-CimInstance Win32_ComputerSystem -ErrorAction Stop }
         $os = & $try { Get-CimInstance Win32_OperatingSystem -ErrorAction Stop }
         $reg = & $try { Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop }
@@ -452,7 +452,7 @@ function Get-SystemInfo {
             & $fmt 'Modelo' $cs.Model
             $cp = & $try { Get-CimInstance Win32_ComputerSystemProduct -ErrorAction Stop }
             if($cp) { & $fmt 'UUID' $cp.UUID }
-            & $fmt 'Domínio/Workgroup' $(if($cs.PartOfDomain){ "Domínio: $($cs.Domain)" } else { "Workgroup: $($cs.Workgroup)" })
+            & $fmt 'Dominio/Workgroup' $(if($cs.PartOfDomain){ "Dominio: $($cs.Domain)" } else { "Workgroup: $($cs.Workgroup)" })
         }
 
         # =====================================================================
@@ -472,21 +472,21 @@ function Get-SystemInfo {
                 "Display Version       : $($reg.DisplayVersion)"
                 "Release ID            : $($reg.ReleaseId)"
                 "Build                 : $build"
-                "Versão WMI            : $($os.Version)"
+                "Versao WMI            : $($os.Version)"
                 "Arquitetura           : $($os.OSArchitecture)"
                 "Idioma                : $($os.MUILanguages -join ', ')"
-                "Instalação            : $($os.InstallDate)"
-                "Último Boot           : $($os.LastBootUpTime)"
+                "Instalacao            : $($os.InstallDate)"
+                "Ultimo Boot           : $($os.LastBootUpTime)"
                 "Uptime (dias)         : $uptime"
                 "Windows Directory     : $($os.WindowsDirectory)"
                 "System Directory      : $($os.SystemDirectory)"
                 "Product Type          : $($os.ProductType)"
-                "Usuário registrado    : $($os.RegisteredUser)"
+                "Usuario registrado    : $($os.RegisteredUser)"
             ) | ForEach-Object { & $add $_ }
         }
 
         $lic = & $try { Get-CimInstance SoftwareLicensingProduct -ErrorAction Stop | Where-Object { $_.PartialProductKey -and $_.LicenseStatus -eq 1 } | Select-Object -First 1 }
-        if($lic) { & $fmt 'Ativação Windows' 'Licenciado/Ativado' }
+        if($lic) { & $fmt 'Ativacao Windows' 'Licenciado/Ativado' }
 
         # =====================================================================
         # 03. HARDWARE
@@ -494,13 +494,13 @@ function Get-SystemInfo {
         $sectionTimer = Get-Date
         & $sectionStart '03. Hardware'
         & $sec '## 03. HARDWARE'
-        & $log 'INFO' 'Consultando BIOS e número de série.'
+        & $log 'INFO' 'Consultando BIOS e numero de serie.'
         $bios = & $try { Get-CimInstance Win32_BIOS -ErrorAction Stop }
         if($bios) {
             @(
                 "BIOS                 : $($bios.Name)"
                 "BIOS Fabricante      : $($bios.Manufacturer)"
-                "BIOS Versão          : $($bios.SMBIOSBIOSVersion)"
+                "BIOS Versao          : $($bios.SMBIOSBIOSVersion)"
                 "BIOS Data            : $($bios.ReleaseDate)"
                 "Serial               : $($bios.SerialNumber)"
             ) | ForEach-Object { & $add $_ }
@@ -512,7 +512,7 @@ function Get-SystemInfo {
                 "CPU                  : $($cpu.Name)"
                 "Cores                : $($cpu.NumberOfCores)"
                 "Threads              : $($cpu.NumberOfLogicalProcessors)"
-                "Clock Máx.           : $($cpu.MaxClockSpeed) MHz"
+                "Clock Max.           : $($cpu.MaxClockSpeed) MHz"
                 "Clock Atual          : $($cpu.CurrentClockSpeed) MHz"
                 "Cache L2             : $(& $safeRound ($cpu.L2CacheSize/1KB),0) KB"
                 "Cache L3             : $(& $safeRound ($cpu.L3CacheSize/1KB),0) KB"
@@ -521,7 +521,7 @@ function Get-SystemInfo {
 
         $ram = & $try { Get-CimInstance Win32_PhysicalMemory -ErrorAction Stop }
         if($ram) {
-            & $add ''; & $add 'MEMÓRIA RAM:'
+            & $add ''; & $add 'MEMORIA RAM:'
             $ram | ForEach-Object {
                 & $add "  - $(& $safeRound ($_.Capacity/1GB),1) GB | $($_.Speed) MHz | $($_.Manufacturer) | $($_.PartNumber) | Slot: $($_.DeviceLocator)"
             }
@@ -529,7 +529,7 @@ function Get-SystemInfo {
 
         $disks = & $try { Get-CimInstance Win32_DiskDrive -ErrorAction Stop }
         if($disks) {
-            & $add ''; & $add 'DISCOS FÍSICOS:'
+            & $add ''; & $add 'DISCOS FISICOS:'
             $disks | ForEach-Object {
                 & $add "  - $($_.Model) | $(& $safeRound ($_.Size/1GB),0) GB | Interface: $($_.InterfaceType) | Serial: $($_.SerialNumber) | Firmware: $($_.FirmwareRevision)"
             }
@@ -547,7 +547,7 @@ function Get-SystemInfo {
 
         $smart = & $try { Get-PhysicalDisk -ErrorAction Stop }
         if($smart) {
-            & $add ''; & $add 'SAÚDE DOS DISCOS:'
+            & $add ''; & $add 'SAUDE DOS DISCOS:'
             $smart | ForEach-Object {
                 & $add "  - $($_.FriendlyName) | Tipo: $($_.MediaType) | Health: $($_.HealthStatus) | Operacional: $($_.OperationalStatus) | Tamanho: $(& $safeRound ($_.Size/1GB),0) GB"
             }
@@ -555,7 +555,7 @@ function Get-SystemInfo {
 
         $gpus = & $try { Get-CimInstance Win32_VideoController -ErrorAction Stop }
         if($gpus) {
-            & $add ''; & $add 'GPU / VÍDEO:'
+            & $add ''; & $add 'GPU / VIDEO:'
             $gpus | ForEach-Object {
                 & $add "  - $($_.Name) | Driver: $($_.DriverVersion) | Data: $($_.DriverDate) | VRAM: $(& $safeRound ($_.AdapterRAM/1GB),1) GB | Res: $($_.CurrentHorizontalResolution)x$($_.CurrentVerticalResolution)"
             }
@@ -570,7 +570,7 @@ function Get-SystemInfo {
         $devBad = & $try { Get-CimInstance Win32_PnPEntity -ErrorAction Stop | Where-Object { $_.ConfigManagerErrorCode -and $_.ConfigManagerErrorCode -ne 0 } }
         if($devBad) {
             & $add ''; & $add 'DISPOSITIVOS COM ERRO:'
-            $devBad | ForEach-Object { & $add "  - $($_.Name) | Código: $($_.ConfigManagerErrorCode) | PNP: $($_.PNPDeviceID)" }
+            $devBad | ForEach-Object { & $add "  - $($_.Name) | Codigo: $($_.ConfigManagerErrorCode) | PNP: $($_.PNPDeviceID)" }
         }
 
         $bat = & $try { Get-CimInstance Win32_Battery -ErrorAction Stop }
@@ -582,12 +582,12 @@ function Get-SystemInfo {
         }
 
         # =====================================================================
-        # 04. REDE - somente informações locais
+        # 04. REDE - somente informacoes locais
         # =====================================================================
         $sectionTimer = Get-Date
         & $sectionStart '04. Rede'
         & $sec '## 04. REDE'
-        & $log 'INFO' 'Consultando adaptadores e configuração de rede local.'
+        & $log 'INFO' 'Consultando adaptadores e configuracao de rede local.'
         $adapters = & $try { Get-NetAdapter -ErrorAction Stop }
         if($adapters) {
             & $add 'ADAPTADORES:'
@@ -596,7 +596,7 @@ function Get-SystemInfo {
 
         $cfgs = & $try { Get-NetIPConfiguration -ErrorAction Stop }
         if($cfgs) {
-            & $add ''; & $add 'CONFIGURAÇÕES IP:'
+            & $add ''; & $add 'CONFIGURACOES IP:'
             $cfgs | ForEach-Object {
                 $ip = if($_.IPv4Address){ $_.IPv4Address.IPAddress -join ', ' } else { '-' }
                 $gw = if($_.IPv4DefaultGateway){ $_.IPv4DefaultGateway.NextHop -join ', ' } else { '-' }
@@ -617,7 +617,7 @@ function Get-SystemInfo {
         $route = & $try { Get-NetRoute -AddressFamily IPv4 -ErrorAction Stop | Where-Object { $_.NextHop -notin '0.0.0.0','255.255.255.255' } | Select-Object -First 30 }
         if($route) {
             & $add ''; & $add 'ROTAS:'
-            $route | ForEach-Object { & $add "  - $($_.DestinationPrefix) | Gateway: $($_.NextHop) | Métrica: $($_.RouteMetric) | Interface: $($_.InterfaceAlias)" }
+            $route | ForEach-Object { & $add "  - $($_.DestinationPrefix) | Gateway: $($_.NextHop) | Metrica: $($_.RouteMetric) | Interface: $($_.InterfaceAlias)" }
         }
 
         $arp = & $try { Get-NetNeighbor -ErrorAction Stop | Where-Object State -ne Unreachable | Select-Object -First 50 }
@@ -639,26 +639,26 @@ function Get-SystemInfo {
         }
 
         # =====================================================================
-        # 05. SEGURANÇA
+        # 05. SEGURANCA
         # =====================================================================
         $sectionTimer = Get-Date
-        & $sectionStart '05. Segurança'
-        & $sec '## 05. SEGURANÇA'
-        & $log 'INFO' 'Consultando firewall, TPM, Secure Boot, BitLocker e antivírus.'
+        & $sectionStart '05. Seguranca'
+        & $sec '## 05. SEGURANCA'
+        & $log 'INFO' 'Consultando firewall, TPM, Secure Boot, BitLocker e antivirus.'
         $fw = & $try { Get-NetFirewallProfile -ErrorAction Stop }
         if($fw) { & $add "Firewall             : $(($fw | ForEach-Object { "$($_.Name): $(if($_.Enabled){'ON'}else{'OFF'})" }) -join ', ')" }
 
         $tpm = & $try { Get-Tpm -ErrorAction Stop }
-        if($tpm) { @("TPM presente         : $($tpm.TpmPresent)","TPM pronto            : $($tpm.TpmReady)","TPM versão            : $($tpm.ManufacturerVersion)") | ForEach-Object { & $add $_ } }
+        if($tpm) { @("TPM presente         : $($tpm.TpmPresent)","TPM pronto            : $($tpm.TpmReady)","TPM versao            : $($tpm.ManufacturerVersion)") | ForEach-Object { & $add $_ } }
 
         $sbv = & $try { Confirm-SecureBootUEFI -ErrorAction Stop }
         if($null -ne $sbv) { & $fmt 'Secure Boot' $(if($sbv){'Ativado'}else{'Desativado'}) }
 
         $bit = & $try { Get-BitLockerVolume -ErrorAction Stop }
-        if($bit) { & $add 'BITLOCKER:'; $bit | ForEach-Object { & $add "  - $($_.MountPoint) | Status: $($_.VolumeStatus) | Proteção: $($_.ProtectionStatus) | Método: $($_.EncryptionMethod)" } }
+        if($bit) { & $add 'BITLOCKER:'; $bit | ForEach-Object { & $add "  - $($_.MountPoint) | Status: $($_.VolumeStatus) | Protecao: $($_.ProtectionStatus) | Metodo: $($_.EncryptionMethod)" } }
 
         $av = & $try { Get-CimInstance -Namespace root\SecurityCenter2 -ClassName AntivirusProduct -ErrorAction Stop }
-        if($av) { & $add ''; & $add 'ANTIVÍRUS:'; $av | ForEach-Object { & $add "  - $($_.DisplayName) | Status: $($_.productState)" } }
+        if($av) { & $add ''; & $add 'ANTIVIRUS:'; $av | ForEach-Object { & $add "  - $($_.DisplayName) | Status: $($_.productState)" } }
 
         $def = & $try { Get-MpComputerStatus -ErrorAction Stop }
         if($def) { @("Defender             : Ativo=$($def.AntivirusEnabled) | RT=$($def.RealTimeProtectionEnabled)","Assinatura Defender   : $($def.AntivirusSignatureLastUpdated)") | ForEach-Object { & $add $_ } }
@@ -672,10 +672,10 @@ function Get-SystemInfo {
         $sectionTimer = Get-Date
         & $sectionStart '06. Windows Update'
         & $sec '## 06. WINDOWS UPDATE / PATCHES'
-        # InstalledOn pode chegar como string inválida em alguns sistemas.
-        # Não usamos Sort-Object diretamente sobre InstalledOn porque isso pode
-        # provocar conversão automática para DateTime e interromper a coleta.
-        & $log 'INFO' 'Consultando hotfixes e atualizações instaladas.'
+        # InstalledOn pode chegar como string invalida em alguns sistemas.
+        # Nao usamos Sort-Object diretamente sobre InstalledOn porque isso pode
+        # provocar conversao automatica para DateTime e interromper a coleta.
+        & $log 'INFO' 'Consultando hotfixes e atualizacoes instaladas.'
         $hot = & $try {
             $hotfixes = @(Get-HotFix -ErrorAction Stop)
 
@@ -721,7 +721,7 @@ function Get-SystemInfo {
                     [string]$_.InstalledOn
                 }
                 else {
-                    '[data inválida/indisponível]'
+                    '[data invalida/indisponivel]'
                 }
 
                 & $add "  - $($_.HotFixID) | $installed | $($_.Description)"
@@ -738,7 +738,7 @@ function Get-SystemInfo {
             }
         }
         if($wu) {
-            @("Última busca         : $($wu.Last)","Pendentes             : $($wu.Pending.Count)") | ForEach-Object { & $add $_ }
+            @("Ultima busca         : $($wu.Last)","Pendentes             : $($wu.Pending.Count)") | ForEach-Object { & $add $_ }
             $wu.Pending | Select-Object -First 10 | ForEach-Object { & $add "  - $($_.Title)" }
         }
 
@@ -763,9 +763,9 @@ function Get-SystemInfo {
         if($drivers) { & $add ''; & $add 'DRIVERS:'; $drivers | Select-Object -First 100 | ForEach-Object { & $add "  - $($_.DeviceName) | $($_.DriverVersion) | $($_.DriverDate) | $($_.Manufacturer)" } }
 
         # =====================================================================
-        # 08. SERVIÇOS / INICIALIZAÇÃO
+        # 08. SERVICOS / INICIALIZACAO
         # =====================================================================
-        & $sec '## 08. SERVIÇOS / INICIALIZAÇÃO'
+        & $sec '## 08. SERVICOS / INICIALIZACAO'
         $svc = & $try { Get-Service -ErrorAction Stop | Where-Object Status -eq Running | Sort-Object Name }
         if($svc) { $svc | Select-Object -First 100 | ForEach-Object { & $add "  - $($_.Name) | $($_.DisplayName) | $($_.StartType)" } }
 
@@ -774,7 +774,7 @@ function Get-SystemInfo {
             'HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run'
             'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
         )
-        & $add 'INICIALIZAÇÃO (Run):'
+        & $add 'INICIALIZACAO (Run):'
         foreach($p in $run) {
             $x = & $try { Get-ItemProperty $p -ErrorAction Stop }
             if($x) {
@@ -792,11 +792,11 @@ function Get-SystemInfo {
         if($tasks) { & $add ''; & $add 'TAREFAS AGENDADAS (TERCEIROS):'; $tasks | Select-Object -First 100 | ForEach-Object { & $add "  - $($_.TaskPath)$($_.TaskName) | $($_.State)" } }
 
         # =====================================================================
-        # 09. USUÁRIOS / COMPARTILHAMENTOS
+        # 09. USUARIOS / COMPARTILHAMENTOS
         # =====================================================================
-        & $sec '## 09. USUÁRIOS / COMPARTILHAMENTOS'
+        & $sec '## 09. USUARIOS / COMPARTILHAMENTOS'
         $users = & $try { Get-LocalUser -ErrorAction Stop }
-        if($users) { $users | ForEach-Object { & $add "  - $($_.Name) | Ativo: $($_.Enabled) | Último Login: $($_.LastLogon) | Senha: $($_.PasswordLastSet)" } }
+        if($users) { $users | ForEach-Object { & $add "  - $($_.Name) | Ativo: $($_.Enabled) | Ultimo Login: $($_.LastLogon) | Senha: $($_.PasswordLastSet)" } }
 
         $admins = & $try { Get-LocalGroupMember Administrators -ErrorAction Stop }
         if($admins) { & $add ''; & $add 'ADMINISTRADORES:'; $admins | ForEach-Object { & $add "  - $($_.Name) | $($_.ObjectType)" } }
@@ -808,12 +808,12 @@ function Get-SystemInfo {
         if($mapped) { & $add ''; & $add 'DRIVES MAPEADOS:'; $mapped | ForEach-Object { & $add "  - $($_.Name): -> $($_.DisplayRoot)" } }
 
         # =====================================================================
-        # 10. PROCESSOS / DIAGNÓSTICO
+        # 10. PROCESSOS / DIAGNOSTICO
         # =====================================================================
         $sectionTimer = Get-Date
-        & $sectionStart '10. Processos e diagnóstico'
-        & $sec '## 10. PROCESSOS / DIAGNÓSTICO'
-        & $log 'INFO' 'Coletando processos e conexões locais.'
+        & $sectionStart '10. Processos e diagnostico'
+        & $sec '## 10. PROCESSOS / DIAGNOSTICO'
+        & $log 'INFO' 'Coletando processos e conexoes locais.'
         $proc = & $try { Get-Process -ErrorAction Stop | Sort-Object WorkingSet64 -Descending | Select-Object -First 30 }
         if($proc) {
             $proc | ForEach-Object {
@@ -827,11 +827,11 @@ function Get-SystemInfo {
         if($listen) { & $add ''; & $add 'PORTAS EM ESCUTA:'; $listen | ForEach-Object { & $add "  - $($_.Line.Trim())" } }
 
         $est = & $try { netstat -ano 2>$null | Select-String ESTABLISHED | Select-Object -First 50 }
-        if($est) { & $add ''; & $add 'CONEXÕES ESTABELECIDAS:'; $est | ForEach-Object { & $add "  - $($_.Line.Trim())" } }
+        if($est) { & $add ''; & $add 'CONEXOES ESTABELECIDAS:'; $est | ForEach-Object { & $add "  - $($_.Line.Trim())" } }
 
         $events = & $try { Get-WinEvent -FilterHashtable @{LogName='System';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50 -ErrorAction Stop }
         if($events) {
-            & $add ''; & $add 'ERROS/CRÍTICOS DO SYSTEM (7 DIAS):'
+            & $add ''; & $add 'ERROS/CRITICOS DO SYSTEM (7 DIAS):'
             $events | ForEach-Object {
                 $message = if($_.Message){ $_.Message -replace '\s+',' ' } else { '' }
                 if($message.Length -gt 180){ $message = $message.Substring(0,180) }
@@ -841,7 +841,7 @@ function Get-SystemInfo {
 
         $appEvents = & $try { Get-WinEvent -FilterHashtable @{LogName='Application';Level=1,2;StartTime=(Get-Date).AddDays(-7)} -MaxEvents 50 -ErrorAction Stop }
         if($appEvents) {
-            & $add ''; & $add 'ERROS/CRÍTICOS DE APLICATIVOS (7 DIAS):'
+            & $add ''; & $add 'ERROS/CRITICOS DE APLICATIVOS (7 DIAS):'
             $appEvents | ForEach-Object {
                 $message = if($_.Message){ $_.Message -replace '\s+',' ' } else { '' }
                 if($message.Length -gt 180){ $message = $message.Substring(0,180) }
@@ -862,16 +862,9 @@ function Get-SystemInfo {
         # =====================================================================
         $sectionTimer = Get-Date
         & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
-        & $sec '## 11. ÁRVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA'
+        & $sec '## 11. ARVORE DE ARQUIVOS DO PERFIL / DESKTOP / LIXEIRA
     $sectionTimer = Get-Date
-    & $sectionStart '11. Árvore de arquivos do perfil / Desktop / Lixeira'
-
-    # Coleta controlada:
-    # - somente as pastas principais do perfil;
-    # - até 2 níveis abaixo de cada pasta principal;
-    # - não usa Get-ChildItem -Recurse;
-    # - representação em árvore;
-    # - limite preventivo por diretório.
+    & $sectionStart '11. Arvore de arquivos do perfil / Desktop / Lixeira'
 
     $profileRoot = [Environment]::GetFolderPath('UserProfile')
 
@@ -888,26 +881,30 @@ function Get-SystemInfo {
         'Saved Games'
     )
 
-    $maxDepth = 2
     $maxItemsPerDirectory = 150
+    $maxDepth = 2
 
     function Write-TreeDirectory {
         param(
             [Parameter(Mandatory=$true)]
             [string]$Path,
 
-            [Parameter(Mandatory=$true)]
-            [int]$Depth,
+            [Parameter(Mandatory=$false)]
+            [string]$Prefix = '',
 
-            [Parameter(Mandatory=$true)]
-            [string]$Prefix,
+            [Parameter(Mandatory=$false)]
+            [int]$Depth = 1,
 
-            [Parameter(Mandatory=$true)]
-            [int]$MaxDepth,
+            [Parameter(Mandatory=$false)]
+            [int]$MaxDepth = 2,
 
-            [Parameter(Mandatory=$true)]
-            [int]$MaxItems
+            [Parameter(Mandatory=$false)]
+            [int]$MaxItems = 150
         )
+
+        if($null -eq $Prefix) {
+            $Prefix = ''
+        }
 
         if($Depth -gt $MaxDepth) {
             return
@@ -915,49 +912,51 @@ function Get-SystemInfo {
 
         try {
             $children = @(Get-ChildItem -LiteralPath $Path -Force -ErrorAction Stop |
-                Sort-Object -Property PSIsContainer,Name)
+                Sort-Object -Property @{Expression={$_.PSIsContainer};Descending=$true}, Name)
 
             $total = $children.Count
-            $shown = [Math]::Min($total,$MaxItems)
+            $itemsToShow = @($children | Select-Object -First $MaxItems)
+            $shown = $itemsToShow.Count
+
+            if($shown -eq 0) {
+                [void]$sb.AppendLine(('{0}[EMPTY]' -f $Prefix))
+                return
+            }
+
             $index = 0
 
-            # Os caracteres da árvore são construídos numericamente para
-            # evitar que o caractere pipe seja interpretado como operador.
-            $pipe = [string][char]124
-            $slash = [string][char]92
-
-            foreach($item in ($children | Select-Object -First $MaxItems)) {
+            foreach($item in $itemsToShow) {
                 $index++
 
                 if($index -eq $shown) {
-                    $branch = $slash + '-- '
-                    $childPrefix = $Prefix + '    '
+                    $branch = '\-- '
+                    $nextPrefix = $Prefix + '    '
                 }
                 else {
-                    $branch = $pipe + '-- '
-                    $childPrefix = $Prefix + $pipe + '   '
+                    $branch = '|-- '
+                    $nextPrefix = $Prefix + '|   '
                 }
 
                 if($item.PSIsContainer) {
                     [void]$sb.AppendLine(
-                        ('{0}{1}[PASTA] {2}' -f $Prefix,$branch,$item.Name)
+                        ('{0}{1}[FOLDER] {2}' -f $Prefix,$branch,$item.Name)
                     )
 
                     if($Depth -lt $MaxDepth) {
                         Write-TreeDirectory `
                             -Path $item.FullName `
+                            -Prefix $nextPrefix `
                             -Depth ($Depth + 1) `
-                            -Prefix $childPrefix `
                             -MaxDepth $MaxDepth `
                             -MaxItems $MaxItems
                     }
                 }
                 else {
                     if($item.Extension -eq '.lnk') {
-                        $fileType = 'ATALHO'
+                        $itemType = 'SHORTCUT'
                     }
                     else {
-                        $fileType = 'ARQUIVO'
+                        $itemType = 'FILE'
                     }
 
                     $sizeText = ''
@@ -969,62 +968,58 @@ function Get-SystemInfo {
                     }
 
                     [void]$sb.AppendLine(
-                        ('{0}{1}[{2}] {3}{4}' -f $Prefix,$branch,$fileType,$item.Name,$sizeText)
+                        ('{0}{1}[{2}] {3}{4}' -f $Prefix,$branch,$itemType,$item.Name,$sizeText)
                     )
                 }
             }
 
             if($total -gt $MaxItems) {
                 [void]$sb.AppendLine(
-                    ('{0}    ... {1} item(ns) omitido(s) neste diretório (limite={2}).' -f $Prefix,($total-$MaxItems),$MaxItems)
+                    ('{0}    ... {1} item(s) omitted. Limit={2}.' -f $Prefix,($total - $MaxItems),$MaxItems)
                 )
             }
         }
         catch {
             [void]$sb.AppendLine(
-                ('{0}    [ERRO] Não foi possível listar: {1}' -f $Prefix,$_.Exception.Message)
+                ('{0}    [ERROR] Cannot list directory: {1}' -f $Prefix,$_.Exception.Message)
             )
-            & $log 'WARN' ("Falha ao listar diretório {0}: {1}" -f $Path,$_.Exception.Message)
+            & $log 'WARN' ("Cannot list directory: {0} | {1}" -f $Path,$_.Exception.Message)
         }
     }
 
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('============================================================')
-    [void]$sb.AppendLine('ÁRVORE DE ARQUIVOS E PASTAS DO PERFIL')
+    [void]$sb.AppendLine('PROFILE FILE AND FOLDER TREE')
     [void]$sb.AppendLine('============================================================')
-    [void]$sb.AppendLine(('Raiz: {0}' -f $profileRoot))
-    [void]$sb.AppendLine(('Profundidade máxima: {0} níveis abaixo de cada pasta principal' -f $maxDepth))
+    [void]$sb.AppendLine(('Root: {0}' -f $profileRoot))
+    [void]$sb.AppendLine(('Maximum depth: {0}' -f $maxDepth))
     [void]$sb.AppendLine('')
 
     foreach($folderName in $mainProfileFolders) {
         $folderPath = Join-Path $profileRoot $folderName
 
         if(-not (Test-Path -LiteralPath $folderPath -PathType Container)) {
-            [void]$sb.AppendLine(
-                ('[NÃO ENCONTRADA] {0}' -f $folderName)
-            )
+            [void]$sb.AppendLine(('[NOT FOUND] {0}' -f $folderName))
             continue
         }
 
-        [void]$sb.AppendLine(
-            ('{0}\' -f $folderName)
-        )
+        [void]$sb.AppendLine(('{0}\' -f $folderName))
 
         Write-TreeDirectory `
             -Path $folderPath `
-            -Depth 1 `
             -Prefix '' `
+            -Depth 1 `
             -MaxDepth $maxDepth `
             -MaxItems $maxItemsPerDirectory
 
         [void]$sb.AppendLine('')
     }
 
-    & $log 'INFO' ("Árvore do perfil concluída. Profundidade máxima={0}; limite por diretório={1}" -f $maxDepth,$maxItemsPerDirectory)
+    & $log 'INFO' ("Profile tree completed. Depth={0}; limit={1}" -f $maxDepth,$maxItemsPerDirectory)
 
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('============================================================')
-    [void]$sb.AppendLine('ÁRVORE DA ÁREA DE TRABALHO')
+    [void]$sb.AppendLine('DESKTOP TREE')
     [void]$sb.AppendLine('============================================================')
     [void]$sb.AppendLine('')
 
@@ -1039,19 +1034,19 @@ function Get-SystemInfo {
 
         Write-TreeDirectory `
             -Path $desktopPath `
-            -Depth 1 `
             -Prefix '' `
+            -Depth 1 `
             -MaxDepth $maxDepth `
             -MaxItems $maxItemsPerDirectory
     }
     else {
-        [void]$sb.AppendLine('[DESKTOP NÃO ENCONTRADO]')
-        & $log 'WARN' ("Desktop não encontrado: {0}" -f $desktopPath)
+        [void]$sb.AppendLine('[DESKTOP NOT FOUND]')
+        & $log 'WARN' ("Desktop not found: {0}" -f $desktopPath)
     }
 
     [void]$sb.AppendLine('')
     [void]$sb.AppendLine('============================================================')
-    [void]$sb.AppendLine('LIXEIRA')
+    [void]$sb.AppendLine('RECYCLE BIN')
     [void]$sb.AppendLine('============================================================')
     [void]$sb.AppendLine('')
 
@@ -1060,65 +1055,59 @@ function Get-SystemInfo {
         $recycleBin = $shell.Namespace(0xA)
 
         if($null -eq $recycleBin) {
-            [void]$sb.AppendLine('[NÃO FOI POSSÍVEL ACESSAR A LIXEIRA]')
-            & $log 'WARN' 'Shell.Application não retornou a Lixeira.'
+            [void]$sb.AppendLine('[RECYCLE BIN UNAVAILABLE]')
+            & $log 'WARN' 'Shell.Application did not return the Recycle Bin.'
         }
         else {
             $recycleItems = @($recycleBin.Items())
 
             if($recycleItems.Count -eq 0) {
-                [void]$sb.AppendLine('[LIXEIRA VAZIA]')
+                [void]$sb.AppendLine('[RECYCLE BIN EMPTY]')
             }
             else {
-                [void]$sb.AppendLine('Lixeira\')
+                [void]$sb.AppendLine('RecycleBin\')
 
                 $index = 0
                 $shownRecycle = [Math]::Min($recycleItems.Count,$maxItemsPerDirectory)
-                $pipe = [string][char]124
-                $slash = [string][char]92
 
                 foreach($item in ($recycleItems | Select-Object -First $maxItemsPerDirectory)) {
                     $index++
 
                     if($index -eq $shownRecycle) {
-                        $branch = $slash + '-- '
+                        $branch = '\-- '
                     }
                     else {
-                        $branch = $pipe + '-- '
+                        $branch = '|-- '
                     }
 
                     try {
-                        [void]$sb.AppendLine(
-                            ('{0}[ITEM] {1}' -f $branch,$item.Name)
-                        )
+                        [void]$sb.AppendLine(('{0}[ITEM] {1}' -f $branch,$item.Name))
                     }
                     catch {
-                        [void]$sb.AppendLine(
-                            ('{0}[ITEM] (nome indisponível)' -f $branch)
-                        )
+                        [void]$sb.AppendLine(('{0}[ITEM] [NAME UNAVAILABLE]' -f $branch))
                     }
                 }
 
                 if($recycleItems.Count -gt $maxItemsPerDirectory) {
                     [void]$sb.AppendLine(
-                        ('    ... {0} item(ns) omitido(s) na Lixeira.' -f ($recycleItems.Count-$maxItemsPerDirectory))
+                        ('    ... {0} item(s) omitted.' -f ($recycleItems.Count - $maxItemsPerDirectory))
                     )
                 }
             }
 
-            & $log 'INFO' ("Lixeira processada: itens encontrados={0}" -f $recycleItems.Count)
+            & $log 'INFO' ("Recycle Bin completed. Items={0}" -f $recycleItems.Count)
         }
     }
     catch {
         [void]$sb.AppendLine(
-            ('[ERRO] Não foi possível consultar a Lixeira: {0}' -f $_.Exception.Message)
+            ('[ERROR] Cannot query Recycle Bin: {0}' -f $_.Exception.Message)
         )
-        & $log 'WARN' ("Falha ao consultar Lixeira: {0}" -f $_.Exception.Message)
+        & $log 'WARN' ("Cannot query Recycle Bin: {0}" -f $_.Exception.Message)
     }
 
-    & $sectionEnd '11. Árvore de arquivos do perfil / Desktop / Lixeira' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
+    & $sectionEnd '11. Arvore de arquivos do perfil / Desktop / Lixeira' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
 
-    & $sec '## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
+## 12. NAVEGADORES / HISTORICO / DOWNLOADS / FAVORITOS / EXTENSOES'
 
         $browserRoots = @(
             [pscustomobject]@{ Name='Google Chrome'; UserRoot=(Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') },
@@ -1130,12 +1119,12 @@ function Get-SystemInfo {
 
         foreach($browser in $browserRoots) {
             if(-not (Test-Path $browser.UserRoot -PathType Container)) {
-                & $log 'INFO' "$($browser.Name): diretório não encontrado. Pulando."
+                & $log 'INFO' "$($browser.Name): diretorio nao encontrado. Pulando."
                 continue
             }
 
             $browserStart = Get-Date
-            & $log 'INFO' "$($browser.Name): diretório encontrado. Procurando perfis."
+            & $log 'INFO' "$($browser.Name): diretorio encontrado. Procurando perfis."
 
             & $add ''
             & $add $browser.Name.ToUpper()
@@ -1165,7 +1154,7 @@ function Get-SystemInfo {
                     & $add "PERFIL: $profileName"
 
                     # ---------------------------------------------------------
-                    # HISTÓRICO + DOWNLOADS
+                    # HISTORICO + DOWNLOADS
                     # ---------------------------------------------------------
                     $historyDb = Join-Path $profile.FullName 'History'
 
@@ -1173,8 +1162,8 @@ function Get-SystemInfo {
                         & $log 'INFO' "$($browser.Name) / ${profileName}: banco History localizado."
 
                         if($sqliteProvider -or $sqliteExe) {
-                            # A consulta usa aliases estáveis e já converte timestamps
-                            # internos do Chromium para data/hora legível.
+                            # A consulta usa aliases estaveis e ja converte timestamps
+                            # internos do Chromium para data/hora legivel.
                             $historyQuery = @"
 SELECT
     datetime((v.visit_time/1000000)-11644473600,'unixepoch','localtime') AS Data,
@@ -1190,16 +1179,16 @@ LIMIT $BrowserEntries;
                             $hist = & $invokeBrowserSQLite `
                                 $historyDb `
                                 $historyQuery `
-                                "$($browser.Name) / $profileName / Histórico"
+                                "$($browser.Name) / $profileName / Historico"
 
                             $count = & $writeSqlRows `
                                 $hist `
-                                'HISTÓRICO DE NAVEGAÇÃO' `
+                                'HISTORICO DE NAVEGACAO' `
                                 @('Data','Titulo','URL','Transition')
 
                             $browserTotal += $count
 
-                            # O schema de downloads varia entre versões.
+                            # O schema de downloads varia entre versoes.
                             # Primeiro tenta o schema moderno.
                             $downloadQuery = @"
 SELECT
@@ -1241,17 +1230,17 @@ LIMIT $BrowserEntries;
                                 @('Data','Arquivo','URL','Bytes')
                         }
                         else {
-                            & $log 'WARN' ("{0} / {1}: nenhum mecanismo SQLite disponível." -f $browser.Name,$profileName)
-                            & $add '  [SQLite não disponível para converter o banco em dados legíveis]'
+                            & $log 'WARN' ("{0} / {1}: nenhum mecanismo SQLite disponivel." -f $browser.Name,$profileName)
+                            & $add '  [SQLite nao disponivel para converter o banco em dados legiveis]'
                         }
                     }
                     else {
-                        & $log 'INFO' ("{0} / {1}: banco History não encontrado." -f $browser.Name,$profileName)
-                        & $add '  [banco History não encontrado]'
+                        & $log 'INFO' ("{0} / {1}: banco History nao encontrado." -f $browser.Name,$profileName)
+                        & $add '  [banco History nao encontrado]'
                     }
 
                     # ---------------------------------------------------------
-                    # FAVORITOS — JSON, não SQL
+                    # FAVORITOS - JSON, nao SQL
                     # ---------------------------------------------------------
                     $bookmark = Join-Path $profile.FullName 'Bookmarks'
 
@@ -1264,7 +1253,7 @@ LIMIT $BrowserEntries;
 
                         try {
                             $bookmarkText = [System.IO.File]::ReadAllText($bookmark)
-                            if($null -eq $bookmarkText) { throw 'Arquivo Bookmarks não pôde ser lido.' }
+                            if($null -eq $bookmarkText) { throw 'Arquivo Bookmarks nao pode ser lido.' }
                             $json = $bookmarkText | ConvertFrom-Json
 
                             $bookmarkCount = 0
@@ -1298,20 +1287,20 @@ LIMIT $BrowserEntries;
                         }
                         catch {
                             & $log 'WARN' ("{0} / {1}: erro ao converter Bookmarks: {2}" -f $browser.Name,$profileName,$_.Exception.Message)
-                            & $add '  [não foi possível interpretar o arquivo de favoritos]'
+                            & $add '  [nao foi possivel interpretar o arquivo de favoritos]'
                         }
                     }
 
                     # ---------------------------------------------------------
-                    # EXTENSÕES
+                    # EXTENSOES
                     # ---------------------------------------------------------
                     $extRoot = Join-Path $profile.FullName 'Extensions'
 
                     if(Test-Path $extRoot -PathType Container) {
-                        & $log 'INFO' ("{0} / {1}: procurando extensões." -f $browser.Name,$profileName)
+                        & $log 'INFO' ("{0} / {1}: procurando extensoes." -f $browser.Name,$profileName)
 
                         & $add ''
-                        & $add 'EXTENSÕES / PLUGINS'
+                        & $add 'EXTENSOES / PLUGINS'
                         & $add ('-' * 60)
 
                         $extensions = & $getDirectories $extRoot
@@ -1329,7 +1318,7 @@ LIMIT $BrowserEntries;
                             if($manifest) {
                                 try {
                                     $manifestText = [System.IO.File]::ReadAllText($manifest.FullName)
-                                    if($null -eq $manifestText) { throw 'manifest.json não pôde ser lido.' }
+                                    if($null -eq $manifestText) { throw 'manifest.json nao pode ser lido.' }
                                     $m = $manifestText | ConvertFrom-Json
                                     $name = if($m.name) { [string]$m.name } else { $ext.Name }
 
@@ -1337,10 +1326,10 @@ LIMIT $BrowserEntries;
                                         $name = $ext.Name
                                     }
 
-                                    & $add "  - Nome: $name | Versão: $($m.version) | ID: $($ext.Name)"
+                                    & $add "  - Nome: $name | Versao: $($m.version) | ID: $($ext.Name)"
                                 }
                                 catch {
-                                    & $add "  - ID: $($ext.Name) | [manifest não pôde ser interpretado]"
+                                    & $add "  - ID: $($ext.Name) | [manifest nao pode ser interpretado]"
                                 }
                             }
                             else {
@@ -1350,7 +1339,7 @@ LIMIT $BrowserEntries;
                     }
 
                     $elapsed = [int]((Get-Date) - $profileStart).TotalSeconds
-                    & $log 'INFO' "$($browser.Name) / ${profileName}: perfil concluído em ${elapsed}s."
+                    & $log 'INFO' "$($browser.Name) / ${profileName}: perfil concluido em ${elapsed}s."
                 }
             }
             else {
@@ -1393,11 +1382,11 @@ LIMIT $BrowserEntries;
                             $hist = & $invokeBrowserSQLite `
                                 $places `
                                 $firefoxHistoryQuery `
-                                "Mozilla Firefox / $profileName / Histórico"
+                                "Mozilla Firefox / $profileName / Historico"
 
                             $count = & $writeSqlRows `
                                 $hist `
-                                'HISTÓRICO DE NAVEGAÇÃO' `
+                                'HISTORICO DE NAVEGACAO' `
                                 @('Data','Titulo','URL')
 
                             $browserTotal += $count
@@ -1425,25 +1414,25 @@ LIMIT $BrowserEntries;
                                 @('Data','Titulo','URL')
                         }
                         else {
-                            & $log 'WARN' ("Mozilla Firefox / {0}: SQLite não disponível." -f $profileName)
-                            & $add '  [SQLite não disponível para converter places.sqlite]'
+                            & $log 'WARN' ("Mozilla Firefox / {0}: SQLite nao disponivel." -f $profileName)
+                            & $add '  [SQLite nao disponivel para converter places.sqlite]'
                         }
                     }
                     else {
-                        & $log 'INFO' "Mozilla Firefox / ${profileName}: places.sqlite não encontrado."
-                        & $add '  [places.sqlite não encontrado]'
+                        & $log 'INFO' "Mozilla Firefox / ${profileName}: places.sqlite nao encontrado."
+                        & $add '  [places.sqlite nao encontrado]'
                     }
 
                     $addons = Join-Path $profile.FullName 'extensions.json'
 
                     if(Test-Path $addons -PathType Leaf) {
                         & $add ''
-                        & $add 'EXTENSÕES / PLUGINS'
+                        & $add 'EXTENSOES / PLUGINS'
                         & $add ('-' * 60)
 
                         try {
                             $addonText = [System.IO.File]::ReadAllText($addons)
-                            if($null -eq $addonText) { throw 'Arquivo extensions.json não pôde ser lido.' }
+                            if($null -eq $addonText) { throw 'Arquivo extensions.json nao pode ser lido.' }
                             $j = $addonText | ConvertFrom-Json
 
                             $addonCount = 0
@@ -1457,30 +1446,30 @@ LIMIT $BrowserEntries;
                                             $addon.id
                                         }
 
-                                        & $add "  - Nome: $name | Versão: $($addon.version) | ID: $($addon.id)"
+                                        & $add "  - Nome: $name | Versao: $($addon.version) | ID: $($addon.id)"
                                         $addonCount++
                                     }
                                 }
                             }
 
-                            & $log 'INFO' "Mozilla Firefox / ${profileName}: extensões convertidas=$addonCount."
+                            & $log 'INFO' "Mozilla Firefox / ${profileName}: extensoes convertidas=$addonCount."
                         }
                         catch {
                             & $log 'WARN' "Mozilla Firefox / ${profileName}: erro ao converter extensions.json: $($_.Exception.Message)"
-                            & $add '  [não foi possível interpretar extensions.json]'
+                            & $add '  [nao foi possivel interpretar extensions.json]'
                         }
                     }
 
                     $elapsed = [int]((Get-Date) - $profileStart).TotalSeconds
-                    & $log 'INFO' "Mozilla Firefox / ${profileName}: perfil concluído em ${elapsed}s."
+                    & $log 'INFO' "Mozilla Firefox / ${profileName}: perfil concluido em ${elapsed}s."
                 }
             }
 
             $browserElapsed = [int]((Get-Date) - $browserStart).TotalSeconds
-            & $log 'INFO' "$($browser.Name): coleta concluída em ${browserElapsed}s."
+            & $log 'INFO' "$($browser.Name): coleta concluida em ${browserElapsed}s."
         }
 
-        & $log 'INFO' "Navegadores: total de registros de histórico processados=$browserTotal."
+        & $log 'INFO' "Navegadores: total de registros de historico processados=$browserTotal."
 
         # =====================================================================
         # 13. AMBIENTE
@@ -1497,13 +1486,13 @@ LIMIT $BrowserEntries;
         }
 
         & $add ''
-        & $add 'LOG DE EXECUÇÃO'
+        & $add 'LOG DE EXECUCAO'
         & $add ('-' * 78)
         & $add "Arquivo de log: $logFile"
-        & $add "Mecanismo SQLite: $(if($sqliteProvider){$sqliteProvider}elseif($sqliteExe){'sqlite3.exe'}else{'não disponível'})"
+        & $add "Mecanismo SQLite: $(if($sqliteProvider){$sqliteProvider}elseif($sqliteExe){'sqlite3.exe'}else{'nao disponivel'})"
         & $add ''
         & $add $sep
-        & $add 'FIM DO RELATÓRIO'
+        & $add 'FIM DO RELATORIO'
         & $add $sep
 
         & $log 'INFO' 'Coleta de dados concluida. Preparando gravacao do relatorio.'
@@ -1526,27 +1515,27 @@ LIMIT $BrowserEntries;
         [System.IO.File]::WriteAllText($fullOutput, $sb.ToString(), $utf8)
 
         if(!(Test-Path $fullOutput -PathType Leaf)) {
-            throw "O arquivo de relatório não foi criado."
+            throw "O arquivo de relatorio nao foi criado."
         }
 
         $elapsedTotal = [int]((Get-Date) - $scriptStart).TotalSeconds
-        & $log 'INFO' "Relatório gravado com sucesso: $fullOutput"
+        & $log 'INFO' "Relatorio gravado com sucesso: $fullOutput"
         & $log 'INFO' "Coleta encerrada. Tempo total=${elapsedTotal}s."
 
-        Write-Host "Relatório salvo em: $fullOutput"
+        Write-Host "Relatorio salvo em: $fullOutput"
         Write-Host "Log detalhado: $logFile"
         return $fullOutput
     }
     catch {
         $errorMessage = $_.Exception.Message
         try {
-            & $log 'ERROR' ("Falha fatal na geração/gravação do relatório: {0}" -f $errorMessage)
+            & $log 'ERROR' ("Falha fatal na geracao/gravacao do relatorio: {0}" -f $errorMessage)
         } catch {}
 
-        Write-Error ("Falha ao gerar/salvar relatório em '{0}': {1}" -f $OutputFile,$errorMessage)
+        Write-Error ("Falha ao gerar/salvar relatorio em '{0}': {1}" -f $OutputFile,$errorMessage)
 
-        # Importante: não retorna um caminho inexistente. O chamador receberá
-        # uma exceção e poderá interromper o envio do arquivo.
+        # Importante: nao retorna um caminho inexistente. O chamador recebera
+        # uma excecao e podera interromper o envio do arquivo.
         throw
     }
     finally {
@@ -1563,16 +1552,16 @@ function send_file_to_webhook {
         [string]$FilePath,
         [Parameter(Mandatory=$false)]
         [string]$WebhookUrl,
-        [string]$Titulo = 'Relatório de inventário'
+        [string]$Titulo = 'Relatorio de inventario'
     )
 
     if(!(Test-Path $FilePath -PathType Leaf)) {
-        throw "Arquivo de relatório não existe: $FilePath"
+        throw "Arquivo de relatorio nao existe: $FilePath"
     }
 
     $localPath = (Resolve-Path $FilePath).Path
-    Write-Warning "Envio automático para webhook está desativado nesta versão."
-    Write-Host "Relatório disponível localmente em: $localPath"
+    Write-Warning "Envio automatico para webhook esta desativado nesta versao."
+    Write-Host "Relatorio disponivel localmente em: $localPath"
 
     return @{
         FileSent = $null
@@ -1601,7 +1590,7 @@ function Invoke-DataDump {
         # Executa o comando passado via ScriptBlock
         $out = &$DumpCommand
 
-        # Se o comando não retornar o caminho em texto, usa o OutputFile
+        # Se o comando nao retornar o caminho em texto, usa o OutputFile
         if ([string]::IsNullOrWhiteSpace([string]$out)) {
             if(Test-Path $OutputFile -PathType Leaf) {
                 $out = (Resolve-Path $OutputFile).Path
@@ -1636,12 +1625,12 @@ function Invoke-DataDump {
                 $resolvedOutput = (Resolve-Path -LiteralPath $OutputFile -ErrorAction Stop).Path
             }
             catch {
-                throw "A coleta terminou, mas o arquivo de saída não existe: $OutputFile"
+                throw "A coleta terminou, mas o arquivo de saida nao existe: $OutputFile"
             }
         }
 
         if(-not (Test-Path -LiteralPath $resolvedOutput -PathType Leaf)) {
-            throw "A coleta terminou sem gerar um arquivo válido: $resolvedOutput"
+            throw "A coleta terminou sem gerar um arquivo valido: $resolvedOutput"
         }
 
         Write-Host "Arquivo gerado em: $resolvedOutput"

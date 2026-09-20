@@ -858,13 +858,11 @@ function Get-SystemInfo {
         }
 
         # =====================================================================
-        # 11. ARQUIVOS RECENTES
+        # 11. ARQUIVOS PRINCIPAIS DO PERFIL / LIXEIRA / DESKTOP
         # =====================================================================
         $sectionTimer = Get-Date
-        & $sectionStart '11. Arquivos do usuário / Lixeira / Desktop'
-        & $sec '## 11. ARQUIVOS PRINCIPAIS DO PERFIL / LIXEIRA / DESKTOP
-    $sectionTimer = Get-Date
-    & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
+        & $sectionStart '11. Arquivos principais do perfil / Lixeira / Desktop'
+        & $sec '## 11. ARQUIVOS PRINCIPAIS DO PERFIL / LIXEIRA / DESKTOP'
 
     # Coleta superficial:
     # somente os itens diretamente dentro das pastas principais.
@@ -1099,7 +1097,7 @@ function Get-SystemInfo {
 
     & $sectionEnd '11. Arquivos principais do perfil / Lixeira / Desktop' ([int]((Get-Date) - $sectionTimer).TotalSeconds)
 
-## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
+        & $sec '## 12. NAVEGADORES / HISTÓRICO / DOWNLOADS / FAVORITOS / EXTENSÕES'
 
         $browserRoots = @(
             [pscustomobject]@{ Name='Google Chrome'; UserRoot=(Join-Path $env:LOCALAPPDATA 'Google\Chrome\User Data') },

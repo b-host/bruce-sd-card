@@ -27,6 +27,14 @@ function Get-SystemInfo {
     $ExportDir = [string]$ExportDir
     $OutputFile = [string]$OutputFile
 
+    if([string]::IsNullOrWhiteSpace($OutputFile)) {
+        throw 'OutputFile não pode ser vazio.'
+    }
+
+    if([string]::IsNullOrWhiteSpace($ExportDir)) {
+        throw 'ExportDir não pode ser vazio.'
+    }
+
     # Não usa SilentlyContinue globalmente: falhas individuais são tratadas pelo helper $try.
     $oldErrorActionPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -100,6 +108,10 @@ function Get-SystemInfo {
     }
 
     & $log 'INFO' "Início da coleta. PowerShell=$($PSVersionTable.PSVersion). Host=$env:COMPUTERNAME"
+
+    if($PSVersionTable.PSVersion.Major -lt 3) {
+        & $log 'WARN' 'PowerShell anterior à versão 3 detectado. Algumas APIs modernas poderão não estar disponíveis; a coleta tentará continuar.'
+    }
     & $log 'INFO' "Relatório: $OutputFile"
     & $log 'INFO' "Log: $logFile"
 
@@ -180,12 +192,12 @@ function Get-SystemInfo {
         )
 
         if([string]::IsNullOrWhiteSpace($Database) -or -not (Test-Path $Database -PathType Leaf)) {
-            & $log 'WARN' "$Context: banco não encontrado: $Database"
+            & $log 'WARN' ("{0}: banco não encontrado: {1}" -f $Context,$Database)
             return $null
         }
 
         if([string]::IsNullOrWhiteSpace($Query)) {
-            & $log 'WARN' "$Context: consulta SQL vazia."
+            & $log 'WARN' ("{0}: consulta SQL vazia." -f $Context)
             return $null
         }
 
@@ -202,10 +214,29 @@ function Get-SystemInfo {
         }
 
         try {
-            & $log 'INFO' "$Context: copiando banco e arquivos WAL/SHM para área temporária."
+            & $log 'INFO' ("{0}: copiando banco e arquivos WAL/SHM para área temporária." -f $Context)
 
             New-Item -Path $tmpDir -ItemType Directory -Force -ErrorAction Stop | Out-Null
-            Copy-Item -Path $Database -Destination $tmp -Force -ErrorAction Stop
+
+            $copySucceeded = $false
+            $copyLastError = $null
+
+            for($copyAttempt = 1; $copyAttempt -le 3 -and -not $copySucceeded; $copyAttempt++) {
+                try {
+                    Copy-Item -Path $Database -Destination $tmp -Force -ErrorAction Stop
+                    $copySucceeded = $true
+                }
+                catch {
+                    $copyLastError = $_.Exception.Message
+                    if($copyAttempt -lt 3) {
+                        Start-Sleep -Milliseconds 250
+                    }
+                }
+            }
+
+            if(-not $copySucceeded) {
+                throw "Não foi possível copiar o banco SQLite após 3 tentativas: $copyLastError"
+            }
 
             # Em bancos SQLite no modo WAL, registros recentes podem estar nos
             # arquivos -wal e -shm. Mantemos os sidecars junto da cópia.
@@ -218,7 +249,7 @@ function Get-SystemInfo {
                         Copy-Item -Path $sourceSidecar -Destination $destSidecar -Force -ErrorAction Stop
                     }
                     catch {
-                        & $log 'WARN' "$Context: não foi possível copiar $sidecar."
+                        & $log 'WARN' ("{0}: não foi possível copiar {1}." -f $Context,$sidecar)
                     }
                 }
             }
@@ -233,7 +264,7 @@ function Get-SystemInfo {
                 $table = New-Object System.Data.DataTable
                 $table.Load($rd)
 
-                & $log 'INFO' "$Context: consulta concluída via System.Data.SQLite. Registros=$($table.Rows.Count)"
+                & $log 'INFO' ("{0}: consulta concluída via System.Data.SQLite. Registros={1}" -f $Context,$table.Rows.Count)
                 & $cleanupSqliteTemp
                 return $table
             }
@@ -263,13 +294,13 @@ function Get-SystemInfo {
                     [void]$rows.Add([pscustomobject]$obj)
                 }
 
-                & $log 'INFO' "$Context: consulta concluída via Microsoft.Data.Sqlite. Registros=$($rows.Count)"
+                & $log 'INFO' ("{0}: consulta concluída via Microsoft.Data.Sqlite. Registros={1}" -f $Context,$rows.Count)
                 & $cleanupSqliteTemp
                 return @($rows)
             }
         }
         catch {
-            & $log 'WARN' "$Context: provider .NET falhou: $($_.Exception.Message)"
+            & $log 'WARN' ("{0}: provider .NET falhou: {1}" -f $Context,$_.Exception.Message)
         }
         finally {
             if($rd) { try { $rd.Dispose() } catch {} }
@@ -284,7 +315,7 @@ function Get-SystemInfo {
         if($sqliteExe) {
             $process = $null
             try {
-                & $log 'INFO' "$Context: tentando sqlite3.exe como fallback."
+                & $log 'INFO' ("{0}: tentando sqlite3.exe como fallback." -f $Context)
 
                 $psi = New-Object System.Diagnostics.ProcessStartInfo
                 $psi.FileName = $sqliteExe
@@ -316,19 +347,19 @@ function Get-SystemInfo {
                 }
 
                 if([string]::IsNullOrWhiteSpace($stdout)) {
-                    & $log 'INFO' "$Context: consulta sqlite3.exe não retornou registros."
+                    & $log 'INFO' ("{0}: consulta sqlite3.exe não retornou registros." -f $Context)
                     & $cleanupSqliteTemp
                     return $null
                 }
 
                 $rows = @($stdout | ConvertFrom-Csv)
 
-                & $log 'INFO' "$Context: consulta concluída via sqlite3.exe. Registros=$($rows.Count)"
+                & $log 'INFO' ("{0}: consulta concluída via sqlite3.exe. Registros={1}" -f $Context,$rows.Count)
                 & $cleanupSqliteTemp
                 return $rows
             }
             catch {
-                & $log 'WARN' "$Context: sqlite3.exe falhou: $($_.Exception.Message)"
+                & $log 'WARN' ("{0}: sqlite3.exe falhou: {1}" -f $Context,$_.Exception.Message)
             }
             finally {
                 if($process) {
@@ -1081,12 +1112,12 @@ LIMIT $BrowserEntries;
                                 @('Data','Arquivo','URL','Bytes')
                         }
                         else {
-                            & $log 'WARN' "$($browser.Name) / $profileName: nenhum mecanismo SQLite disponível."
+                            & $log 'WARN' ("{0} / {1}: nenhum mecanismo SQLite disponível." -f $browser.Name,$profileName)
                             & $add '  [SQLite não disponível para converter o banco em dados legíveis]'
                         }
                     }
                     else {
-                        & $log 'INFO' "$($browser.Name) / $profileName: banco History não encontrado."
+                        & $log 'INFO' ("{0} / {1}: banco History não encontrado." -f $browser.Name,$profileName)
                         & $add '  [banco History não encontrado]'
                     }
 
@@ -1096,14 +1127,16 @@ LIMIT $BrowserEntries;
                     $bookmark = Join-Path $profile.FullName 'Bookmarks'
 
                     if(Test-Path $bookmark -PathType Leaf) {
-                        & $log 'INFO' "$($browser.Name) / $profileName: convertendo Bookmarks JSON."
+                        & $log 'INFO' ("{0} / {1}: convertendo Bookmarks JSON." -f $browser.Name,$profileName)
 
                         & $add ''
                         & $add 'FAVORITOS'
                         & $add ('-' * 60)
 
                         try {
-                            $json = Get-Content -Path $bookmark -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                            $bookmarkText = [System.IO.File]::ReadAllText($bookmark)
+                            if($null -eq $bookmarkText) { throw 'Arquivo Bookmarks não pôde ser lido.' }
+                            $json = $bookmarkText | ConvertFrom-Json
 
                             $bookmarkCount = 0
 
@@ -1132,10 +1165,10 @@ LIMIT $BrowserEntries;
                                 }
                             }
 
-                            & $log 'INFO' "$($browser.Name) / $profileName: favoritos convertidos=$bookmarkCount."
+                            & $log 'INFO' ("{0} / {1}: favoritos convertidos={2}." -f $browser.Name,$profileName,$bookmarkCount)
                         }
                         catch {
-                            & $log 'WARN' "$($browser.Name) / $profileName: erro ao converter Bookmarks: $($_.Exception.Message)"
+                            & $log 'WARN' ("{0} / {1}: erro ao converter Bookmarks: {2}" -f $browser.Name,$profileName,$_.Exception.Message)
                             & $add '  [não foi possível interpretar o arquivo de favoritos]'
                         }
                     }
@@ -1146,7 +1179,7 @@ LIMIT $BrowserEntries;
                     $extRoot = Join-Path $profile.FullName 'Extensions'
 
                     if(Test-Path $extRoot -PathType Container) {
-                        & $log 'INFO' "$($browser.Name) / $profileName: procurando extensões."
+                        & $log 'INFO' ("{0} / {1}: procurando extensões." -f $browser.Name,$profileName)
 
                         & $add ''
                         & $add 'EXTENSÕES / PLUGINS'
@@ -1166,7 +1199,9 @@ LIMIT $BrowserEntries;
 
                             if($manifest) {
                                 try {
-                                    $m = Get-Content -Path $manifest.FullName -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                                    $manifestText = [System.IO.File]::ReadAllText($manifest.FullName)
+                                    if($null -eq $manifestText) { throw 'manifest.json não pôde ser lido.' }
+                                    $m = $manifestText | ConvertFrom-Json
                                     $name = if($m.name) { [string]$m.name } else { $ext.Name }
 
                                     if($name -match '^__MSG_') {
@@ -1261,7 +1296,7 @@ LIMIT $BrowserEntries;
                                 @('Data','Titulo','URL')
                         }
                         else {
-                            & $log 'WARN' "Mozilla Firefox / $profileName: SQLite não disponível."
+                            & $log 'WARN' ("Mozilla Firefox / {0}: SQLite não disponível." -f $profileName)
                             & $add '  [SQLite não disponível para converter places.sqlite]'
                         }
                     }
@@ -1278,7 +1313,9 @@ LIMIT $BrowserEntries;
                         & $add ('-' * 60)
 
                         try {
-                            $j = Get-Content -Path $addons -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json
+                            $addonText = [System.IO.File]::ReadAllText($addons)
+                            if($null -eq $addonText) { throw 'Arquivo extensions.json não pôde ser lido.' }
+                            $j = $addonText | ConvertFrom-Json
 
                             $addonCount = 0
 
@@ -1356,7 +1393,7 @@ LIMIT $BrowserEntries;
         }
 
         $fullOutput = [System.IO.Path]::GetFullPath([string]$OutputFile)
-        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        $utf8 = New-Object -TypeName System.Text.UTF8Encoding -ArgumentList $false
         [System.IO.File]::WriteAllText($fullOutput, $sb.ToString(), $utf8)
 
         if(!(Test-Path $fullOutput -PathType Leaf)) {
@@ -1441,11 +1478,9 @@ function Invoke-DataDump {
         Write-Host "Arquivo gerado em: $out"
         return $out
     } catch {
-        Write-Error "Erro ao gerar arquivo: $_"
-        exit 1
+        throw "Erro ao gerar arquivo: $($_.Exception.Message)"
     }
 }
-
 
 ##############################################################################
 ##############################################################################

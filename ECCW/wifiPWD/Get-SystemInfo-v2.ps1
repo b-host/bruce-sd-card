@@ -44,9 +44,19 @@ param(
  [ValidateRange(1,1000)][int]$BrowserItems=100,
  [ValidateRange(1,2000)][int]$DownloadItems=500,
  [switch]$CollectOneDriveShares,
- [switch]$IncludeShareLinks
+ [switch]$IncludeShareLinks,
+ [string]$LogFile=(Join-Path $env:USERPROFILE 'Downloads\system_info_v5_debug.log'),
+ [switch]$DebugMode
 )
 
+function Write-BootstrapLog([string]$Message){
+ try{
+  $p=Join-Path $env:USERPROFILE 'Downloads\system_info_v5_bootstrap.log'
+  Add-Content -LiteralPath $p -Value ("{0} [BOOT] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'),$Message) -Encoding UTF8
+ }catch{}
+}
+Write-BootstrapLog "Arquivo carregado: $PSCommandPath"
+Write-BootstrapLog "PowerShell: $($PSVersionTable.PSVersion)"
 function Start-SystemInfoCollector {
  [CmdletBinding()]
  param(
@@ -59,7 +69,21 @@ function Start-SystemInfoCollector {
   [switch]$CollectOneDriveShares,
   [switch]$IncludeShareLinks
  )
- $ErrorActionPreference='SilentlyContinue';$Started=Get-Date
+ $ErrorActionPreference='Continue';$Started=Get-Date
+ $script:LogFile=$LogFile
+ function Write-CollectorLog([string]$Message,[string]$Level='INFO'){
+  $line="{0} [{1}] {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'),$Level,$Message
+  try{Add-Content -LiteralPath $script:LogFile -Value $line -Encoding UTF8 -ErrorAction Stop}catch{}
+  if($DebugMode){Write-Host $line}
+ }
+ try{
+  $lp=Split-Path -Parent $script:LogFile
+  if($lp -and !(Test-Path $lp)){New-Item -ItemType Directory -Path $lp -Force -ErrorAction Stop|Out-Null}
+  Set-Content -LiteralPath $script:LogFile -Value '' -Encoding UTF8 -ErrorAction Stop
+ }catch{}
+ Write-CollectorLog "INICIO | PID=$PID | PS=$($PSVersionTable.PSVersion) | Arquivo=$PSCommandPath"
+ Write-CollectorLog "PARAMETROS | Workers=$MaxRunspaces Timeout=$TimeoutSeconds BrowserItems=$BrowserItems RecentFiles=$RecentFiles Downloads=$DownloadItems"
+
 function L([string]$s){$s}
 function H([string]$n){@("## $n",('-'*78))}
 function Get-SqliteVarInt([byte[]]$b,[ref]$i){
@@ -68,7 +92,7 @@ function Get-SqliteVarInt([byte[]]$b,[ref]$i){
   if($i.Value -ge $b.Length){throw 'SQLite varint truncado'}
   $x=$b[$i.Value];$i.Value++
   if($n -eq 8){$v=($v -shl 8)-bor$x;break}
-  $v=($v-shl 7)-bor($x -band 0x7f);if(($x -band 0x80)-eq 0){break}
+  $v=($v-shl 7)-bor($x -band 0x7f);if(($x -band 0x80) -eq 0){break}
  }
  $v
 }
@@ -79,7 +103,7 @@ function Get-SqliteRecord([byte[]]$p){
   3{$d+=[int32](($p[$i]-shl 16)-bor($p[$i+1]-shl 8)-bor$p[$i+2]);$i+=3};4{$d+=[int32](($p[$i]-shl 24)-bor($p[$i+1]-shl 16)-bor($p[$i+2]-shl 8)-bor$p[$i+3]);$i+=4}
   5{$v=[int64]0;1..5|ForEach-Object {$v=($v -shl 8)-bor$p[$i];$i++};$d+=$v};6{$v=[int64]0;1..8|ForEach-Object {$v=($v -shl 8)-bor$p[$i];$i++};$d+=$v}
   7{$d+=[BitConverter]::ToDouble([byte[]]$p[$i..($i+7)],0);$i+=8};8{$d+=0};9{$d+=1}
-  default{if($t -ge 12){$n=[int](($t-12)/2);$raw=if($n){[byte[]]$p[$i..($i+$n-1)]}else{[byte[]]@()};if(($t % 2)-eq 0){$d+=$raw}else{$d+=[Text.Encoding]::UTF8.GetString($raw)};$i+=$n}}
+  default{if($t -ge 12){$n=[int](($t-12)/2);$raw=if($n){[byte[]]$p[$i..($i+$n-1)]}else{[byte[]]@()};if(($t % 2) -eq 0){$d+=$raw}else{$d+=[Text.Encoding]::UTF8.GetString($raw)};$i+=$n}}
  }}; $d
 }
 function Get-SqlitePage([IO.FileStream]$fs,[int]$pg,[int]$ps){
@@ -118,14 +142,14 @@ $Tasks=@(
 @{N='02 Hardware';C={ $c=Get-CimInstance Win32_Processor|Select-Object -First 1;$r=Get-CimInstance Win32_PhysicalMemory;$d=Get-CimInstance Win32_DiskDrive;$v=Get-CimInstance Win32_LogicalDisk -Filter 'DriveType=3';$g=Get-CimInstance Win32_VideoController;$x=H '02. HARDWARE';$x+="`r`nCPU: $($c.Name) | $($c.NumberOfCores)C/$($c.NumberOfLogicalProcessors)T";$x+="`r`nRAM:";$r|ForEach-Object {$x+="`r`n  - $([math]::Round($_.Capacity/1GB,1)) GB | $($_.Speed) MHz | $($_.Manufacturer) | $($_.PartNumber)"};$x+="`r`nDISCOS:";$d|ForEach-Object {$x+="`r`n  - $($_.Model) | $([math]::Round($_.Size/1GB,0)) GB | $($_.InterfaceType) | $($_.SerialNumber)"};$x+="`r`nVOLUMES:";$v|ForEach-Object {$x+="`r`n  - $($_.DeviceID) | $($_.FileSystem) | $([math]::Round($_.Size/1GB,1)) GB | Livre $([math]::Round($_.FreeSpace/$_.Size*100,1))%"};$x+="`r`nGPU:";$g|ForEach-Object {$x+="`r`n  - $($_.Name) | Driver $($_.DriverVersion)"};$x }}
 @{N='03 Rede';C={ $x=H '03. REDE';Get-NetAdapter|ForEach-Object {$x+="`r`nADP: $($_.Name) | $($_.Status) | $($_.MacAddress) | $($_.LinkSpeed)"};Get-NetIPConfiguration|ForEach-Object {$x+="`r`nIP: $($_.InterfaceAlias) | $((($_.IPv4Address).IPAddress)-join ',') | GW: $((($_.IPv4DefaultGateway).NextHop)-join ',') | DNS: $((($_.DNSServer).ServerAddresses)-join ',')"};$x }}
 @{N='04 Segurança';C={ $x=H '04. SEGURANÇA';Get-NetFirewallProfile|ForEach-Object {$x+="`r`nFirewall $($_.Name): $($_.Enabled)"};$t=Get-Tpm;$x+="`r`nTPM: Presente=$($t.TpmPresent) Pronto=$($t.TpmReady) Versão=$($t.ManufacturerVersion)";$b=Get-BitLockerVolume;$b|ForEach-Object {$x+="`r`nBitLocker: $($_.MountPoint) | $($_.VolumeStatus) | $($_.ProtectionStatus)"};$x+="`r`nSecure Boot: $(if(Confirm-SecureBootUEFI){'Ativado'}else{'Não confirmado'})";$x }}
-@{N='05 Updates';C={ $x=H '05. WINDOWS UPDATE / PATCHES';Get-HotFix|sort InstalledOn -Desc|Select-Object -First 30|ForEach-Object {$x+="`r`n  - $($_.HotFixID) | $($_.InstalledOn) | $($_.Description)"};$x }}
-@{N='06 Software';C={ $x=H '06. SOFTWARE / DRIVERS';Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'|?DisplayName|sort DisplayName|Select-Object -First 150|ForEach-Object {$x+="`r`n  - $($_.DisplayName) v$($_.DisplayVersion) | $($_.Publisher)"};$x }}
-@{N='07 Startup';C={ $x=H '07. SERVIÇOS / STARTUP';Get-Service|?Status -eq Running|Select-Object -First 150|ForEach-Object {$x+="`r`n  - $($_.Name) | $($_.DisplayName)"};foreach($p in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run','HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'){$z=Get-ItemProperty $p;if($z){$z.PSObject.Properties|?Name -notmatch '^PS'|ForEach-Object {$x+="`r`nRUN: $($_.Name) = $($_.Value)"}}};$x }}
+@{N='05 Updates';C={ $x=H '05. WINDOWS UPDATE / PATCHES';Get-HotFix|Sort-Object InstalledOn -Descending|Select-Object -First 30|ForEach-Object {$x+="`r`n  - $($_.HotFixID) | $($_.InstalledOn) | $($_.Description)"};$x }}
+@{N='06 Software';C={ $x=H '06. SOFTWARE / DRIVERS';Get-ItemProperty 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*','HKLM:\Software\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\*','HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\*'|Where-Object { $_.DisplayName }|Sort-Object DisplayName|Select-Object -First 150|ForEach-Object {$x+="`r`n  - $($_.DisplayName) v$($_.DisplayVersion) | $($_.Publisher)"};$x }}
+@{N='07 Startup';C={ $x=H '07. SERVIÇOS / STARTUP';Get-Service|Where-Object { $_.Status -eq 'Running' }|Select-Object -First 150|ForEach-Object {$x+="`r`n  - $($_.Name) | $($_.DisplayName)"};foreach($p in 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run','HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Run','HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'){$z=Get-ItemProperty $p;if($z){$z.PSObject.Properties|Where-Object { $_.Name -notmatch '^PS' }|ForEach-Object {$x+="`r`nRUN: $($_.Name) = $($_.Value)"}}};$x }}
 @{N='08 Usuários';C={ $x=H '08. USUÁRIOS / COMPARTILHAMENTOS';Get-LocalUser|ForEach-Object {$x+="`r`n  - $($_.Name) | Ativo=$($_.Enabled) | ÚltimoLogin=$($_.LastLogon)"};$x+='`r`nADMINISTRADORES:';Get-LocalGroupMember Administrators|ForEach-Object {$x+="`r`n  - $($_.Name)"};Get-SmbShare|ForEach-Object {$x+="`r`nSMB: $($_.Name) | $($_.Path)"};$x }}
-@{N='09 Diagnóstico';C={ $x=H '09. DIAGNÓSTICO';Get-Process|sort WorkingSet64 -Desc|Select-Object -First 40|ForEach-Object {$x+="`r`n  - $($_.ProcessName) | PID=$($_.Id) | $([math]::Round($_.WorkingSet64/1MB,1)) MB"};$x+='`r`nPORTAS:';netstat -ano 2>$null|sls LISTENING|Select-Object -First 80|ForEach-Object {$x+="`r`n  - $($_.Line.Trim())"};$x }}
-@{N='10 Recentes';C={ $x=H '10. ARQUIVOS RECENTES';$p=Join-Path $env:APPDATA 'Microsoft\Windows\Recent';Get-ChildItem $p -File|sort LastWriteTime -Desc|Select-Object -First $RecentFiles|ForEach-Object {$x+="`r`n  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)"};$x }}
+@{N='09 Diagnóstico';C={ $x=H '09. DIAGNÓSTICO';Get-Process|Sort-Object WorkingSet64 -Descending|Select-Object -First 40|ForEach-Object {$x+="`r`n  - $($_.ProcessName) | PID=$($_.Id) | $([math]::Round($_.WorkingSet64/1MB,1)) MB"};$x+='`r`nPORTAS:';netstat -ano 2>$null|Select-String LISTENING|Select-Object -First 80|ForEach-Object {$x+="`r`n  - $($_.Line.Trim())"};$x }}
+@{N='10 Recentes';C={ $x=H '10. ARQUIVOS RECENTES';$p=Join-Path $env:APPDATA 'Microsoft\Windows\Recent';Get-ChildItem $p -File|Sort-Object LastWriteTime -Descending|Select-Object -First $RecentFiles|ForEach-Object {$x+="`r`n  - $($_.LastWriteTime) | $($_.Name) | $($_.FullName)"};$x }}
 @{N='11 Ambiente';C={ $x=H '11. AMBIENTE';'PATH','APPDATA','PROGRAMDATA','SYSTEMDRIVE','SYSTEMROOT','TEMP','TMP','USERNAME','COMPUTERNAME'|ForEach-Object {$v=[Environment]::GetEnvironmentVariable($_);$x+="`r`n$_ = $v"};$x }}
-@{N='12 Downloads';C={ $x=H '12. DOWNLOADS';$f=Get-ChildItem "$env:USERPROFILE\Downloads" -File -Force -ErrorAction SilentlyContinue|sort LastWriteTime -Desc|Select-Object -First $DownloadItems;$x+="`r`nTotal coletado: $($f.Count)";$f|ForEach-Object {$x+="`r`n  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.Extension) | $($_.FullName)"};$x+='`r`nRESUMO POR EXTENSÃO:';$f|group Extension|sort Count -Desc|ForEach-Object {$x+="`r`n  - $($_.Name): $($_.Count)"};$x }}
+@{N='12 Downloads';C={ $x=H '12. DOWNLOADS';$f=Get-ChildItem "$env:USERPROFILE\Downloads" -File -Force -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First $DownloadItems;$x+="`r`nTotal coletado: $($f.Count)";$f|ForEach-Object {$x+="`r`n  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.Extension) | $($_.FullName)"};$x+='`r`nRESUMO POR EXTENSÃO:';$f|Group-Object Extension|Sort-Object Count -Descending|ForEach-Object {$x+="`r`n  - $($_.Name): $($_.Count)"};$x }}
 @{N='13 Navegadores';C={
  $x=H '13. NAVEGADORES / HISTÓRICO / BOOKMARKS / EXTENSÕES'
  $bs=@(@('Chrome',"$env:LOCALAPPDATA\Google\Chrome\User Data"),@('Edge',"$env:LOCALAPPDATA\Microsoft\Edge\User Data"),@('Brave',"$env:LOCALAPPDATA\BraveSoftware\Brave-Browser\User Data"),@('Vivaldi',"$env:LOCALAPPDATA\Vivaldi\User Data"),@('Opera',"$env:APPDATA\Opera Software\Opera Stable"))
@@ -173,11 +197,11 @@ $native=@(
  'function Get-SqlitePage '+(Get-Command Get-SqlitePage).ScriptBlock.ToString(),
  'function Get-SqliteRows '+(Get-Command Get-SqliteRows).ScriptBlock.ToString()
 )-join "`r`n";
-$iss=[initialsessionstate]::CreateDefault();$pool=[runspacefactory]::CreateRunspacePool(1,$MaxRunspaces,$iss,$Host);$pool.Open();$q=@()
-foreach($t in $Tasks){$ps=[powershell]::Create();$ps.RunspacePool=$pool;[void]$ps.AddScript({param($n,$c,$init);& ([scriptblock]::Create($init));$w=[Diagnostics.Stopwatch]::StartNew();try{[pscustomobject]@{N=$n;S='OK';T=[math]::Round($w.Elapsed.TotalSeconds,2);X=&$c}}catch{[pscustomobject]@{N=$n;S='ERRO';T=[math]::Round($w.Elapsed.TotalSeconds,2);X="[$n] ERRO: $($_.Exception.Message)"}}}).AddArgument($t.N).AddArgument($t.C).AddArgument($native);$q+=[pscustomobject]@{N=$t.N;P=$ps;A=$ps.BeginInvoke()}}
-$r=@();$end=(Get-Date).AddSeconds($TimeoutSeconds);while($q.Count){foreach($j in @($q)){if($j.A.IsCompleted){try{$r+=$j.P.EndInvoke($j.A)}catch{$r+=[pscustomobject]@{N=$j.N;S='ERRO';T=0;X="[$($j.N)] falha ao finalizar"}};$j.P.Dispose();$nq=@();foreach($qq in $q){if($qq -ne $j){$nq+=$qq}};$q=$nq}};if($q.Count -and (Get-Date)-gt $end){foreach($j in @($q)){$j.P.Stop();$r+=[pscustomobject]@{N=$j.N;S='TIMEOUT';T=$TimeoutSeconds;X="[$($j.N)] TIMEOUT $TimeoutSeconds s"};$j.P.Dispose()};$q=@()}else{Start-Sleep -Milliseconds 40}}
-$pool.Close();$pool.Dispose();$parent=Split-Path $OutputFile -Parent;if($parent -and !(Test-Path $parent)){New-Item $parent -ItemType Directory -Force|Out-Null};$sb=[Text.StringBuilder]::new();$sep='='*78;[void]$sb.AppendLine($sep);[void]$sb.AppendLine('INVENTÁRIO TÉCNICO COMPLETO - V5 CONCORRENTE + SQLITE NATIVO');[void]$sb.AppendLine("Coletado: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Workers: $MaxRunspaces | Timeout: $TimeoutSeconds s");[void]$sb.AppendLine($sep)
-foreach($z in $r){[void]$sb.AppendLine($z.X);[void]$sb.AppendLine('')};[void]$sb.AppendLine($sep);[void]$sb.AppendLine('## DESEMPENHO');$r | ForEach-Object { [void]$sb.AppendLine(('{0,-25} | {1,-8} | {2,7}s'-f$_.N,$_.S,$_.T))};[void]$sb.AppendLine("Total: $([math]::Round(((Get-Date)-$Started).TotalSeconds,2)) s");[void]$sb.AppendLine($sep);$sb.ToString()|Out-File $OutputFile -Encoding UTF8 -Force;Write-Host "Relatório: $OutputFile";Write-Host "Tempo total: $([math]::Round(((Get-Date)-$Started).TotalSeconds,2)) s";return (Resolve-Path $OutputFile).ProviderPath
+Write-CollectorLog "FASE Runspace | Criando pool com $($Tasks.Count) tarefas";$iss=[initialsessionstate]::CreateDefault();$pool=[runspacefactory]::CreateRunspacePool(1,$MaxRunspaces,$iss,$Host);$pool.Open();Write-CollectorLog 'FASE Runspace | Pool aberto';$q=@()
+Write-CollectorLog 'FASE Runspace | Iniciando tarefas';foreach($t in $Tasks){Write-CollectorLog "QUEUE | $($t.N)";$ps=[powershell]::Create();$ps.RunspacePool=$pool;[void]$ps.AddScript({param($n,$c,$init,$log);& ([scriptblock]::Create($init));$w=[Diagnostics.Stopwatch]::StartNew();try{Add-Content -LiteralPath $log -Value ("{0} [TASK-START] {1}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'),$n) -ErrorAction SilentlyContinue;$x=&$c;Add-Content -LiteralPath $log -Value ("{0} [TASK-END] {1} OK {2}s" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'),$n,[math]::Round($w.Elapsed.TotalSeconds,2)) -ErrorAction SilentlyContinue;[pscustomobject]@{N=$n;S='OK';T=[math]::Round($w.Elapsed.TotalSeconds,2);X=$x}}catch{Add-Content -LiteralPath $log -Value ("{0} [TASK-ERROR] {1} {2}" -f (Get-Date -Format 'yyyy-MM-dd HH:mm:ss.fff'),$n,$_.Exception.ToString()) -ErrorAction SilentlyContinue;[pscustomobject]@{N=$n;S='ERRO';T=[math]::Round($w.Elapsed.TotalSeconds,2);X="[$n] ERRO: $($_.Exception.Message)"}}}).AddArgument($t.N).AddArgument($t.C).AddArgument($native).AddArgument($LogFile);$q+=[pscustomobject]@{N=$t.N;P=$ps;A=$ps.BeginInvoke()}}
+$r=@();Write-CollectorLog "FASE Runspace | Aguardando conclusao (timeout=$TimeoutSeconds s)";$end=(Get-Date).AddSeconds($TimeoutSeconds);while($q.Count){foreach($j in @($q)){if($j.A.IsCompleted){try{$r+=$j.P.EndInvoke($j.A)}catch{$r+=[pscustomobject]@{N=$j.N;S='ERRO';T=0;X="[$($j.N)] falha ao finalizar"}};$j.P.Dispose();$nq=@();foreach($qq in $q){if($qq -ne $j){$nq+=$qq}};$q=$nq}};if($q.Count -and (Get-Date)-gt $end){foreach($j in @($q)){$j.P.Stop();$r+=[pscustomobject]@{N=$j.N;S='TIMEOUT';T=$TimeoutSeconds;X="[$($j.N)] TIMEOUT $TimeoutSeconds s"};$j.P.Dispose()};$q=@()}else{Start-Sleep -Milliseconds 40}}
+$pool.Close();$pool.Dispose();Write-CollectorLog "FASE Runspace | Concluido | Resultados=$($r.Count)";$parent=Split-Path $OutputFile -Parent;if($parent -and !(Test-Path $parent)){New-Item $parent -ItemType Directory -Force|Out-Null};$sb=[Text.StringBuilder]::new();$sep='='*78;[void]$sb.AppendLine($sep);[void]$sb.AppendLine('INVENTÁRIO TÉCNICO COMPLETO - V5 CONCORRENTE + SQLITE NATIVO');[void]$sb.AppendLine("Coletado: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss') | Workers: $MaxRunspaces | Timeout: $TimeoutSeconds s");[void]$sb.AppendLine($sep)
+foreach($z in $r){[void]$sb.AppendLine($z.X);[void]$sb.AppendLine('')};[void]$sb.AppendLine($sep);[void]$sb.AppendLine('## DESEMPENHO');$r | ForEach-Object { [void]$sb.AppendLine(('{0,-25} | {1,-8} | {2,7}s'-f$_.N,$_.S,$_.T))};[void]$sb.AppendLine("Total: $([math]::Round(((Get-Date)-$Started).TotalSeconds,2)) s");[void]$sb.AppendLine($sep);$sb.ToString()|Out-File $OutputFile -Encoding UTF8 -Force;Write-CollectorLog "RELATORIO | $OutputFile";Write-CollectorLog 'FIM | Coleta concluida';Write-Host "Relatório: $OutputFile";Write-Host "Tempo total: $([math]::Round(((Get-Date)-$Started).TotalSeconds,2)) s";return (Resolve-Path $OutputFile).ProviderPath
 }
 
 # -----------------------------------------------------------------------------

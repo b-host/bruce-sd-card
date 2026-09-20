@@ -51,7 +51,7 @@ function Get-SystemInfo {
 
     # --- Helper ---
     $null = $sb.AppendLine($sep)
-    $null = $sb.AppendLine("RELATÓRIO COMPLETO DO SISTEMA")
+    $null = $sb.AppendLine("RELAToRIO COMPLETO DO SISTEMA")
     $null = $sb.AppendLine("Coletado em: $timestamp")
     $null = $sb.AppendLine($sep)
     $null = $sb.AppendLine("")
@@ -59,7 +59,7 @@ function Get-SystemInfo {
     # ===========================
     # 1. IDENTIFICAÇÃO DO USUÁRIO
     # ===========================
-    $null = $sb.AppendLine("## 1. IDENTIFICAÇÃO DO USUÁRIO")
+    $null = $sb.AppendLine("## 1. IDENTIFICACAO DO USUARIO")
     $null = $sb.AppendLine("-" * 70)
     $null = $sb.AppendLine("Usuário Logado       : $env:USERNAME")
     $null = $sb.AppendLine("Domínio              : $env:USERDOMAIN")
@@ -113,7 +113,7 @@ function Get-SystemInfo {
     # 2. INFORMAÇÕES DO SISTEMA / OS
     # ===========================
     $null = $sb.AppendLine("")
-    $null = $sb.AppendLine("## 2. INFORMAÇÕES DO SISTEMA OPERACIONAL")
+    $null = $sb.AppendLine("## 2. INFORMACOES DO SISTEMA OPERACIONAL")
     $null = $sb.AppendLine("-" * 70)
     try {
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction SilentlyContinue
@@ -179,7 +179,7 @@ function Get-SystemInfo {
         $ram = Get-CimInstance -ClassName Win32_PhysicalMemory -ErrorAction SilentlyContinue
         if ($ram) {
             $null = $sb.AppendLine("")
-            $null = $sb.AppendLine("  MEMÓRIA RAM:")
+            $null = $sb.AppendLine("  MEMORIA RAM:")
             foreach ($m in $ram) {
                 $null = $sb.AppendLine("    - $([math]::Round($m.Capacity / 1GB, 1)) GB | Speed: $($m.Speed) MHz | Manufacturer: $($m.Manufacturer) | Part: $($m.PartNumber)")
             }
@@ -203,7 +203,7 @@ function Get-SystemInfo {
         $partitions = Get-CimInstance -ClassName Win32_LogicalDisk -Filter "DriveType=3" -ErrorAction SilentlyContinue
         if ($partitions) {
             $null = $sb.AppendLine("")
-            $null = $sb.AppendLine("  PARTIÇÕES / VOLUMES:")
+            $null = $sb.AppendLine("  PARTICOES / VOLUMES:")
             foreach ($p in $partitions) {
                 $totalGB = [math]::Round($p.Size / 1GB, 2)
                 $freeGB = [math]::Round(($p.Size - $p.FreeSpace) / 1GB, 2)
@@ -218,7 +218,7 @@ function Get-SystemInfo {
         $gpus = Get-CimInstance -ClassName Win32_VideoController -ErrorAction SilentlyContinue
         if ($gpus) {
             $null = $sb.AppendLine("")
-            $null = $sb.AppendLine("  PLACA DE VÍDEO (GPU):")
+            $null = $sb.AppendLine("  PLACA DE VIDEO (GPU):")
             foreach ($g in $gpus) {
                 $null = $sb.AppendLine("    - $($g.Name)")
                 $null = $sb.AppendLine("      Driver Version: $($g.DriverVersion) | Date: $($g.DriverDate)")
@@ -232,7 +232,7 @@ function Get-SystemInfo {
         $mb = Get-CimInstance -ClassName Win32_BaseBoard -ErrorAction SilentlyContinue
         if ($mb) {
             $null = $sb.AppendLine("")
-            $null = $sb.AppendLine("  PLACA MÃE")
+            $null = $sb.AppendLine("  PLACA MAE")
             $null = $sb.AppendLine("    Fabricante: $($mb.Manufacturer)")
             $null = $sb.AppendLine("    Modelo    : $($mb.Product)")
             $null = $sb.AppendLine("    Serial    : $($mb.SerialNumber)")

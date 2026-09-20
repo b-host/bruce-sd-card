@@ -145,8 +145,27 @@ $Tasks=@(
   $e=Join-Path $_.FullName 'extensions.json';$x+="Extensões: $(if(Test-Path $e){'arquivo presente'}else{'não encontrado'})"
  }}
  $x+='';$x+='SQLite: parser nativo PowerShell/.NET; sem SQLite.dll, sqlite3.exe, módulos ou instalações externas.';$x+='Segurança: não coleta senhas, cookies, tokens ou sessões.';$x -join "`r`n" }}
-@{N='14 OneDrive';C={ $x=H '14. ONEDRIVE LOCAL';$a=Get-ItemProperty 'HKCU:\Software\Microsoft\OneDrive\Accounts\*'|%UserFolder|?{$_};if(!$a){$a="$env:USERPROFILE\OneDrive"|?{Test-Path $_}};if(!$a){$x+='`r`nNenhuma pasta OneDrive detectada.'}else{foreach($d in $a|select -Unique){$x+="`r`nPasta: $d";Get-ChildItem $d -File -Recurse -Force -ErrorAction SilentlyContinue|sort LastWriteTime -Desc|select -First $RecentFiles|%{$x+="`r`n  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.FullName)"}};$x }}
-@{N='15 OneDrive Shares';C={ $x=H '15. ONEDRIVE / LINKS DE COMPARTILHAMENTO';if(!$CollectOneDriveShares){$x+='`r`nGraph desativado. Use -CollectOneDriveShares.'}else{$x+='`r`nA consulta de links/permissões requer Microsoft Graph autenticado. Esta versão não reutiliza tokens locais nem solicita credenciais; portanto não expõe links sem uma integração Graph autorizada.';if($IncludeShareLinks){$x+='`r`n-IncludeShareLinks solicitado, aguardando integração Graph autenticada.'}};$x }}
+@{N='14 OneDrive';C={
+ $x=H '14. ONEDRIVE LOCAL'
+ $a=@(Get-ItemProperty 'HKCU:\Software\Microsoft\OneDrive\Accounts\*' -ErrorAction SilentlyContinue | ForEach-Object { $_.UserFolder } | Where-Object { $_ -and (Test-Path $_) })
+ if(!$a){$a=@(Join-Path $env:USERPROFILE 'OneDrive' | Where-Object { Test-Path $_ })}
+ if(!$a){$x+='`r`nNenhuma pasta OneDrive detectada.'}
+ else{foreach($d in $a|Select-Object -Unique){$x+="`r`nPasta: $d";Get-ChildItem $d -File -Recurse -Force -ErrorAction SilentlyContinue|Sort-Object LastWriteTime -Descending|Select-Object -First $RecentFiles|ForEach-Object {$x+="`r`n  - $($_.LastWriteTime) | $([math]::Round($_.Length/1KB,1)) KB | $($_.FullName)"}}}
+ $x
+ }}
+@{N='15 OneDrive Shares';C={
+ $x=H '15. ONEDRIVE / LINKS DE COMPARTILHAMENTO'
+ if(!$CollectOneDriveShares){
+  $x+='`r`nGraph desativado. Use -CollectOneDriveShares.'
+ }else{
+  $x+='`r`nA consulta de links/permissões requer Microsoft Graph autenticado.'
+  $x+=' Esta versão não reutiliza tokens locais nem solicita credenciais.'
+  if($IncludeShareLinks){
+   $x+='`r`n-IncludeShareLinks solicitado; aguardando integração Graph autenticada.'
+  }
+ }
+ $x
+ }}
 )
 $native=@(
  'function Get-SqliteVarInt '+(Get-Command Get-SqliteVarInt).ScriptBlock.ToString(),

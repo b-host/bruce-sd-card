@@ -1,4 +1,5 @@
 # Rodar Script Remoto
+## Windows
 ```bash
 Delay 1000
 GuiR

